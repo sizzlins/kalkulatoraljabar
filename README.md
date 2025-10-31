@@ -3,6 +3,16 @@
 it is a kalkulator, neat thing it does is it can find x, and uses sympy and all its functions and constant
 type or find equations like how youd typein cheats on source command or something like that
 
+just run and type some equations
+
+or 
+
+put this in your terminal then run
+
+pyinstaller --onefile --console --collect-all sympy kalkulator.py
+
+
+
 def print_help_text():
     help_text = help_text = f""" version {VERSION}
 
