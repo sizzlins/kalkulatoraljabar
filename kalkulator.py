@@ -19,14 +19,12 @@ import subprocess
 import sys
 import os
 import re
+from functools import lru_cache
 from dataclasses import dataclass
 from typing import Optional, Tuple, List, Dict, Any
 
 import sympy as sp
-import re   # <-- use Python's stdlib re for regex operations
 
-
-# DO NOT import worker_solve_main at module import time — import it when needed (see below).
 
 HAS_RESOURCE = False
 try:
@@ -44,13 +42,23 @@ from sympy.parsing.sympy_parser import (
 from sympy import parse_expr
 
 
+# Try to import multiprocessing primitives; guarded at runtime
+try:
+    from multiprocessing import Process, Queue, Event
+except Exception:
+    Process = None  # type: ignore
+    Queue = None  # type: ignore
+    Event = None  # type: ignore
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-VERSION = "2025-10-26"
+VERSION = "2025-10-31"
 WORKER_CPU_SECONDS = 30  # CPU seconds
 WORKER_AS_MB = 400  # address space (virtual memory) in MB
 WORKER_TIMEOUT = 60  # wall-clock seconds for subprocess to finish
+ENABLE_PERSISTENT_WORKER = True  # amortize startup cost with a single background worker
 
 # whitelist for parse_expr (still used inside worker)
 
@@ -70,6 +78,15 @@ ALLOWED_SYMPY_NAMES = {
     "ln": sp.log,
     "exp": sp.exp,
     "Abs": sp.Abs,
+    # Calculus & algebra
+    "diff": sp.diff,
+    "integrate": sp.integrate,
+    "factor": sp.factor,
+    "expand": sp.expand,
+    "simplify": sp.simplify,
+    # Matrices (basic)
+    "Matrix": sp.Matrix,
+    "det": sp.det,
 }
 
 TRANSFORMATIONS = standard_transformations + (
@@ -158,6 +175,17 @@ def fix_fraction(expr: str) -> str:
 
 
 def preprocess(input_str: str, skip_exponent_conversion: bool = False) -> str:
+    # Basic denylist to avoid dangerous tokens before SymPy parsing
+    forbidden_tokens = (
+        "__", "import", "lambda", "eval", "exec", "open", "os.", "sys.",
+        "subprocess", "builtins", "getattr", "setattr", "delattr", "compile", "globals",
+        "locals", "__class__", "__mro__", "__subclasses__", "memoryview", "bytes", "bytearray",
+        "__import__"
+    )
+    lowered = input_str.strip().lower()
+    for tok in forbidden_tokens:
+        if tok in lowered:
+            raise ValueError("Input contains forbidden token.")
 
     s = input_str.strip()
     s = s.replace("−", "-").replace("–", "-")
@@ -201,6 +229,7 @@ def preprocess(input_str: str, skip_exponent_conversion: bool = False) -> str:
     return s
 
 
+@lru_cache(maxsize=1024)
 def parse_preprocessed(expr_str: str) -> Any:
     # Use restricted local_dict and provided transformations
     return parse_expr(expr_str, local_dict=ALLOWED_SYMPY_NAMES,
@@ -289,8 +318,141 @@ def worker_evaluate(preprocessed_expr: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Subprocess-based safe evaluation API (used by main)
+# Persistent worker (multiprocessing) and subprocess-based APIs
 # ---------------------------------------------------------------------------
+
+
+class _WorkerManager:
+    def __init__(self) -> None:
+        self.proc = None
+        self.req_q = None
+        self.res_q = None
+        self.stop_event = None
+
+    def start(self) -> None:
+        if not ENABLE_PERSISTENT_WORKER or Process is None:
+            return
+        if self.is_alive():
+            return
+        self.req_q = Queue()
+        self.res_q = Queue()
+        self.stop_event = Event()
+        self.proc = Process(target=_worker_daemon_main, args=(self.req_q, self.res_q, self.stop_event), daemon=True)
+        self.proc.start()
+
+    def is_alive(self) -> bool:
+        return bool(self.proc and self.proc.is_alive())
+
+    def stop(self) -> None:
+        try:
+            if self.stop_event is not None:
+                self.stop_event.set()
+            if self.proc is not None:
+                self.proc.join(timeout=1.0)
+        except Exception:
+            pass
+        finally:
+            self.proc = None
+            self.req_q = None
+            self.res_q = None
+            self.stop_event = None
+
+    def request(self, payload: Dict[str, Any], timeout: int) -> Optional[Dict[str, Any]]:
+        if not ENABLE_PERSISTENT_WORKER or Process is None:
+            return None
+        if not self.is_alive():
+            self.start()
+        if not self.is_alive():
+            return None
+        try:
+            self.req_q.put(payload)
+            result = self.res_q.get(timeout=timeout)
+            return result
+        except Exception:
+            try:
+                self.stop()
+                self.start()
+                if self.is_alive():
+                    self.req_q.put(payload)
+                    result = self.res_q.get(timeout=timeout)
+                    return result
+            except Exception:
+                self.stop()
+            return None
+
+
+def _worker_daemon_main(req_q, res_q, stop_event) -> None:
+    if HAS_RESOURCE:
+        try:
+            _limit_resources()
+        except Exception:
+            pass
+    while True:
+        if stop_event.is_set():
+            break
+        try:
+            msg = req_q.get(timeout=0.1)
+        except Exception:
+            continue
+        try:
+            kind = msg.get("type")
+            if kind == "eval":
+                pre = msg.get("preprocessed") or ""
+                out = worker_evaluate(pre)
+                res_q.put(out)
+            elif kind == "solve":
+                payload = msg.get("payload") or {}
+                out = _worker_solve_dispatch(payload)
+                res_q.put(out)
+            else:
+                res_q.put({"ok": False, "error": "Unknown request type"})
+        except Exception as e:
+            res_q.put({"ok": False, "error": f"Worker daemon error: {e}"})
+
+
+def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        eqs_input = payload.get("equations", [])
+        eq_objs = []
+        for item in eqs_input:
+            lhs_s = item.get("lhs")
+            rhs_s = item.get("rhs")
+            if lhs_s is None or rhs_s is None:
+                continue
+            lhs_expr = parse_preprocessed(lhs_s)
+            rhs_expr = parse_preprocessed(rhs_s)
+            eq_objs.append(sp.Eq(lhs_expr, rhs_expr))
+        if not eq_objs:
+            return {"ok": False, "error": "No valid equations provided to worker-solve."}
+        if HAS_RESOURCE:
+            try:
+                _limit_resources()
+            except Exception:
+                pass
+        solutions = sp.solve(eq_objs, dict=True)
+        if not solutions:
+            return {"ok": False, "error": "No solution found (sp.solve returned empty)."}
+        sols = []
+        for sol in solutions:
+            sols.append({str(k): str(v) for k, v in sol.items()})
+        return {"ok": True, "type": "system", "solutions": sols}
+    except Exception as e:
+        return {"ok": False, "error": f"Solver error: {e}"}
+
+
+_WORKER_MANAGER = _WorkerManager()
+
+
+
+@lru_cache(maxsize=2048)
+def _worker_eval_cached(preprocessed_expr: str) -> str:
+    """Evaluate via persistent worker if available; else subprocess. Returns JSON text."""
+    resp = _WORKER_MANAGER.request({"type": "eval", "preprocessed": preprocessed_expr}, timeout=WORKER_TIMEOUT)
+    if isinstance(resp, dict):
+        return json.dumps(resp)
+    cmd = _build_self_cmd(["--worker", "--expr", preprocessed_expr])
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=WORKER_TIMEOUT)
+    return proc.stdout or ""
 
 
 def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> Dict[str, Any]:
@@ -303,29 +465,15 @@ def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> Dict[str, Any]:
     except Exception as e:
         return {"ok": False, "error": f"Preprocess error: {e}"}
 
-    # Build the correct command to spawn this program in worker mode
-    cmd = _build_self_cmd(["--worker", "--expr", pre])
-
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        stdout_text = _worker_eval_cached(pre)
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "Evaluation timed out."}
-    if proc.returncode != 0:
-        # worker writes JSON to stdout on success/failure. If it crashed, show stderr.
-        stderr = (proc.stderr or "").strip()
-        stdout = (proc.stdout or "").strip()
-        # Try to parse stdout anyway
-        try:
-            data = json.loads(stdout)
-            return data
-        except Exception:
-            return {"ok": False, "error": f"Worker failed. stderr: {stderr}"}
-    # parse stdout
     try:
-        data = json.loads(proc.stdout)
+        data = json.loads(stdout_text)
         return data
     except Exception as e:
-        return {"ok": False, "error": f"Invalid worker output: {e}. stdout: {proc.stdout!r}"}
+        return {"ok": False, "error": f"Invalid worker output: {e}."}
 
 
 def _build_self_cmd(args: List[str]) -> List[str]:
@@ -472,24 +620,30 @@ def solve_single_equation_cli(eq_str: str, find_var: Optional[str] = None) -> Di
                     "result": "Contradiction (unable to confirm identity symbolically or numerically)"}
 
     # Helper: numeric root-finding fallback for single-variable trig-ish equations
-    def _numeric_roots_for_single_var(f_expr, sym, interval=(-4 * sp.pi, 4 * sp.pi), guesses=120):
+    def _numeric_roots_for_single_var(f_expr, sym, interval=(-4 * sp.pi, 4 * sp.pi), guesses=36):
         roots = []
+        # Prefer polynomial root finding when applicable
+        try:
+            poly = sp.Poly(f_expr, sym)
+            if poly is not None and poly.total_degree() > 0:
+                for r in poly.nroots():
+                    if abs(sp.im(r)) < 1e-8:
+                        roots.append(float(sp.re(r)))
+                uniq = sorted(set(round(x, 12) for x in roots))
+                return [sp.N(r) for r in uniq]
+        except Exception:
+            pass
+
         a = float(interval[0])
         b = float(interval[1])
         guesses_list = [a + (b - a) * i / guesses for i in range(guesses + 1)]
         for g in guesses_list:
             try:
-                # Use nsolve with a floating initial guess
-                r = sp.nsolve(f_expr, sym, g, tol=1e-14, maxsteps=200)
+                r = sp.nsolve(f_expr, sym, g, tol=1e-12, maxsteps=100)
                 if abs(sp.im(r)) > 1e-8:
                     continue
                 r_real = float(sp.re(r))
-                found = False
-                for existing in roots:
-                    if abs(existing - r_real) < 1e-6:
-                        found = True
-                        break
-                if not found:
+                if not any(abs(existing - r_real) < 1e-6 for existing in roots):
                     roots.append(r_real)
             except Exception:
                 continue
@@ -813,6 +967,11 @@ def print_result_pretty(res: Dict[str, Any], json_mode: bool = False) -> None:
 
 
 def repl_loop(json_mode: bool = False) -> None:
+    # Optional history/editing support when available
+    try:
+        import readline  # type: ignore
+    except Exception:
+        readline = None  # type: ignore
     print("Kalkulator Aljabar — type 'help' for commands, 'quit' to exit.")
     while True:
         try:
@@ -957,8 +1116,8 @@ def repl_loop(json_mode: bool = False) -> None:
                         if eva.get("approx"):
                             print("Decimal:", eva.get("approx"))
                 continue
-        except Exception as e:
-            print("Unhandled error in REPL:", e)
+        except Exception:
+            print("An error occurred. Please check your input and try again.")
             continue
 
 
@@ -1092,24 +1251,15 @@ def handle_system_main(raw_no_find: str, find_token: Optional[str]) -> Dict[str,
 
     # Fallback: call worker-solve for general systems
     payload = {"equations": eqs_serialized, "find": find_token}
-    cmd = _build_self_cmd(["--worker-solve", "--payload", json.dumps(payload)])
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=
-        WORKER_TIMEOUT)
+        stdout_text = _worker_solve_cached(json.dumps(payload))
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "Solving timed out (worker)."}
 
-    if proc.returncode != 0:
-        try:
-            data = json.loads(proc.stdout)
-            return data
-        except Exception:
-            return {"ok": False, "error": f"Worker solve failed. stderr: {proc.stderr.strip()}"}
-
     try:
-        data = json.loads(proc.stdout)
+        data = json.loads(stdout_text)
     except Exception as e:
-        return {"ok": False, "error": f"Invalid worker-solve output: {e}. stdout: {proc.stdout!r}"}
+        return {"ok": False, "error": f"Invalid worker-solve output: {e}."}
 
     if not data.get("ok"):
         return data
@@ -1136,6 +1286,21 @@ def handle_system_main(raw_no_find: str, find_token: Optional[str]) -> Dict[str,
     return {"ok": True, "type": "system_var", "exact": found_vals, "approx": approx_vals}
 
 
+@lru_cache(maxsize=256)
+def _worker_solve_cached(payload_json: str) -> str:
+    """Run system solve via persistent worker if available; else subprocess. Return JSON text."""
+    try:
+        payload = json.loads(payload_json)
+    except Exception:
+        payload = {"equations": []}
+    resp = _WORKER_MANAGER.request({"type": "solve", "payload": payload}, timeout=WORKER_TIMEOUT)
+    if isinstance(resp, dict):
+        return json.dumps(resp)
+    cmd = _build_self_cmd(["--worker-solve", "--payload", payload_json])
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=WORKER_TIMEOUT)
+    return proc.stdout or ""
+
+
 def print_help_text():
     help_text = help_text = f""" version {VERSION}
 
@@ -1147,9 +1312,9 @@ Usage (one-line input):
 - REPL chained assignments: a = 2, b = a+3 (evaluated right→left)
 
 Commands:
-- --eval "<EXPR>"    evaluate once and exit
-- --json             machine-friendly JSON output
-- --version          show program version
+- -e/--eval "<EXPR>"  evaluate once and exit
+- -j/--json           machine-friendly JSON output
+- -v/--version        show program version
 - In REPL: help, quit, exit
 
 Supported constants & functions:
@@ -1243,7 +1408,15 @@ Tips:
 - If a computation times out, simplify the expression (smaller exponents, fewer nested functions).
 - Non-finite results (division by zero, infinity) are reported as errors.
 
-Property of Muhammad Akhiel al Syahbana — 22/October/2025
+Calculus & matrices (new):
+- diff(x^3, x)
+- integrate(sin(x), x)
+- factor(x^3 - 1)
+- expand((x+1)^3)
+- Matrix([[1,2],[3,4]])
+- det(Matrix([[1,2],[3,4]]))
+
+Property of Muhammad Akhiel al Syahbana — 31/October/2025
 """
 
     print(help_text)
@@ -1259,9 +1432,9 @@ def main_entry(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--expr", type=str, help=argparse.SUPPRESS)
     parser.add_argument("--worker-solve", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--payload", type=str, help=argparse.SUPPRESS)
-    parser.add_argument("--eval", type=str, help="Evaluate one expression and exit (non-interactive)", dest="eval_expr")
-    parser.add_argument("--json", action="store_true", help="Emit JSON for machine parsing")
-    parser.add_argument("--version", action="store_true", help="Show program version")
+    parser.add_argument("-e", "--eval", type=str, help="Evaluate one expression and exit (non-interactive)", dest="eval_expr")
+    parser.add_argument("-j", "--json", action="store_true", help="Emit JSON for machine parsing")
+    parser.add_argument("-v", "--version", action="store_true", help="Show program version")
     args = parser.parse_args(argv)
 
     # Worker mode (internal)
@@ -1272,10 +1445,8 @@ def main_entry(argv: Optional[List[str]] = None) -> int:
         return 0
 
     # Worker-solve dispatched: pass only the payload to avoid argparse conflicts in the worker
-    # Worker-solve dispatched: import worker_solve_main lazily to avoid circular-imports at module import time
+    # Worker-solve dispatched: directly invoke local worker_solve_main
     if args.worker_solve:
-        # import here to avoid circular import when modules import each other at top-level
-        from workers_CLI import worker_solve_main
         return worker_solve_main(['--payload', args.payload or ''])
 
     if args.version:
@@ -1339,10 +1510,10 @@ if __name__ == "__main__":
         # If something unexpected goes wrong, continue anyway.
         pass
 
-    # Distinguish worker invocation because we use same script for worker subprocesses.
-    # If the script is called with --worker, the main_entry will run the worker branch.
+    # Delegate to modular CLI entrypoint
     try:
-        sys.exit(main_entry(sys.argv[1:]))
+        from kalkulator_pkg.cli import main_entry as pkg_main_entry
+        sys.exit(pkg_main_entry(sys.argv[1:]))
     except KeyboardInterrupt:
         print("\nInterrupted.")
         sys.exit(1)
