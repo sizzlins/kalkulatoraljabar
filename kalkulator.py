@@ -1416,7 +1416,7 @@ Calculus & matrices (new):
 - Matrix([[1,2],[3,4]])
 - det(Matrix([[1,2],[3,4]]))
 
-Property of Muhammad Akhiel al Syahbana — 22/October/2025
+Property of Muhammad Akhiel al Syahbana — 31/October/2025
 """
 
     print(help_text)
