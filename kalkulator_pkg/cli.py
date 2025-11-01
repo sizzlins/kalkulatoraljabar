@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional, List
 import sympy as sp
 
 from .config import VERSION, VAR_NAME_RE
+import threading
 from .parser import parse_preprocessed, format_solution, format_number, format_superscript, prettify_expr, format_inequality_solution, split_top_level_commas
 from .solver import (
 	solve_single_equation_cli,
@@ -77,14 +78,36 @@ def print_result_pretty(res: Dict[str, Any], json_mode: bool = False) -> None:
 
 
 def repl_loop(json_mode: bool = False) -> None:
+	"""Interactive REPL loop with graceful interrupt handling."""
 	try:
 		import readline  # type: ignore
 	except Exception:
 		readline = None  # type: ignore
 	print("Kalkulator Aljabar — type 'help' for commands, 'quit' to exit.")
+	_current_req_id = None  # Track current request for cancellation
+	
+	def signal_handler(signum, frame):
+		"""Handle interrupt signal gracefully."""
+		nonlocal _current_req_id
+		if _current_req_id:
+			from .worker import cancel_current_request
+			cancel_current_request(_current_req_id)
+			print("\n[Cancelling request...]")
+		else:
+			print("\n[Press Ctrl+C again to exit]")
+	
+	# Register signal handler for graceful interrupt (Unix)
+	try:
+		import signal
+		signal.signal(signal.SIGINT, signal_handler)
+	except (ImportError, AttributeError):
+		# Windows doesn't support signal.SIGINT the same way
+		pass
+	
 	while True:
 		try:
 			raw = input(">>> ").strip()
+			_current_req_id = None  # Clear on new input
 		except (EOFError, KeyboardInterrupt):
 			print("\nGoodbye.")
 			break
@@ -250,7 +273,20 @@ def main_entry(argv: Optional[List[str]] = None) -> int:
 	parser.add_argument("--no-numeric-fallback", action="store_true", help="Disable numeric root-finding fallback")
 	parser.add_argument("-p", "--precision", type=int, help="Set output precision (significant digits)")
 	parser.add_argument("-v", "--version", action="store_true", help="Show program version")
+	parser.add_argument("--log-level", type=str, choices=["DEBUG", "INFO", "WARNING", "ERROR"], default="INFO", help="Set logging level")
+	parser.add_argument("--log-file", type=str, help="Write logs to file")
+	parser.add_argument("--cache-size", type=int, help="Set parse/eval cache size (default: 1024/2048)")
+	parser.add_argument("--max-nsolve-guesses", type=int, help="Set maximum nsolve guesses for numeric root finding (default: 36)")
+	parser.add_argument("--worker-mode", type=str, choices=["pool", "single", "subprocess"], help="Worker execution mode (default: pool)")
+	parser.add_argument("--method", type=str, choices=["auto", "symbolic", "numeric"], help="Solver method (default: auto)")
 	args = parser.parse_args(argv)
+	
+	# Setup logging
+	try:
+		from .logging_config import setup_logging
+		setup_logging(level=args.log_level, log_file=args.log_file)
+	except ImportError:
+		pass  # Logging optional
 	if args.timeout and args.timeout > 0:
 		# Apply runtime timeout override
 		import kalkulator_pkg.worker as _w
@@ -261,6 +297,23 @@ def main_entry(argv: Optional[List[str]] = None) -> int:
 	if args.precision and args.precision > 0:
 		import kalkulator_pkg.config as _c
 		_c.OUTPUT_PRECISION = int(args.precision)
+	if args.cache_size and args.cache_size > 0:
+		import kalkulator_pkg.config as _c
+		_c.CACHE_SIZE_PARSE = int(args.cache_size)
+		_c.CACHE_SIZE_EVAL = int(args.cache_size * 2)
+	if args.max_nsolve_guesses and args.max_nsolve_guesses > 0:
+		import kalkulator_pkg.config as _c
+		_c.MAX_NSOLVE_GUESSES = int(args.max_nsolve_guesses)
+	if args.worker_mode:
+		import kalkulator_pkg.config as _c
+		if args.worker_mode == "subprocess":
+			_c.ENABLE_PERSISTENT_WORKER = False
+		elif args.worker_mode == "single":
+			_c.WORKER_POOL_SIZE = 1
+		# "pool" is default
+	if args.method:
+		import kalkulator_pkg.config as _c
+		_c.SOLVER_METHOD = args.method
 	if args.worker:
 		from .worker import worker_evaluate
 		out = worker_evaluate(args.expr or "")

@@ -14,6 +14,17 @@ ENABLE_PERSISTENT_WORKER = True
 WORKER_POOL_SIZE = 1  # future: support >1 workers
 NUMERIC_FALLBACK_ENABLED = True
 OUTPUT_PRECISION = 6
+# Input validation limits
+MAX_INPUT_LENGTH = 10000  # characters
+MAX_EXPRESSION_DEPTH = 100  # tree depth
+MAX_EXPRESSION_NODES = 5000  # total nodes
+# Cache configuration
+CACHE_SIZE_PARSE = 1024
+CACHE_SIZE_EVAL = 2048
+CACHE_SIZE_SOLVE = 256
+# Numeric solver configuration
+MAX_NSOLVE_GUESSES = 36  # reduced from 120
+SOLVER_METHOD = "auto"  # "auto", "symbolic", "numeric"
 
 ALLOWED_SYMPY_NAMES = {
 	"pi": sp.pi,

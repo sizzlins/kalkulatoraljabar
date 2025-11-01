@@ -1,0 +1,17 @@
+# Production dependencies (pinned for security/reproducibility)
+sympy==1.12.1
+mpmath==1.3.0
+
+# Optional dependencies
+matplotlib>=3.5.0; extra == "plotting"
+numpy>=1.21.0; extra == "plotting"
+
+# Development dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.0.0
+isort>=5.12.0
+mypy>=1.5.0
+flake8>=6.0.0
+pylint>=2.15.0
+

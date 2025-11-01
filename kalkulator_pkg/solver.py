@@ -17,7 +17,7 @@ from .parser import (
 	prettify_expr,
 	format_inequality_solution,
 )
-from .config import VAR_NAME_RE, NUMERIC_FALLBACK_ENABLED
+from .config import VAR_NAME_RE, NUMERIC_FALLBACK_ENABLED, MAX_NSOLVE_GUESSES, SOLVER_METHOD
 from .worker import evaluate_safely, _worker_solve_cached
 
 
@@ -125,7 +125,9 @@ def solve_single_equation_cli(eq_str: str, find_var: Optional[str] = None) -> Di
 			return {"ok": True, "type": "identity_or_contradiction",
 						"result": "Contradiction (unable to confirm identity symbolically or numerically)"}
 
-	def _numeric_roots_for_single_var(f_expr, sym, interval=(-4 * sp.pi, 4 * sp.pi), guesses=36):
+	def _numeric_roots_for_single_var(f_expr, sym, interval=(-4 * sp.pi, 4 * sp.pi), guesses=None):
+		if guesses is None:
+			guesses = MAX_NSOLVE_GUESSES
 		roots = []
 		# First, try solveset over the reals within interval, which can be faster and more robust
 		try:
@@ -204,7 +206,7 @@ def solve_single_equation_cli(eq_str: str, find_var: Optional[str] = None) -> Di
 			except Exception as e:
 				if NUMERIC_FALLBACK_ENABLED and equation.has(sp.sin, sp.cos, sp.tan):
 					f = sp.simplify(left_expr - right_expr)
-					numeric_roots = _numeric_roots_for_single_var(f, sym, interval=(-4 * sp.pi, 4 * sp.pi), guesses=36)
+					numeric_roots = _numeric_roots_for_single_var(f, sym, interval=(-4 * sp.pi, 4 * sp.pi))
 					if numeric_roots:
 						exacts = [str(r) for r in numeric_roots]
 						approx = [str(sp.N(r)) for r in numeric_roots]

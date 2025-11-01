@@ -6,6 +6,34 @@ __all__ = [
     "solver",
     "worker",
     "cli",
+    "types",
+    "api",
+    "logging_config",
+]
+
+# Public API exports
+from .api import (
+    evaluate,
+    solve_equation,
+    solve_inequality,
+    solve_system,
+    validate_expression,
+    diff,
+    integrate_expr,
+    det,
+    plot,
+)
+
+__api_exports__ = [
+    "evaluate",
+    "solve_equation",
+    "solve_inequality",
+    "solve_system",
+    "validate_expression",
+    "diff",
+    "integrate_expr",
+    "det",
+    "plot",
 ]
 
 

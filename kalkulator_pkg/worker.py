@@ -9,8 +9,25 @@ from typing import Any, Dict, Optional, List
 
 import sympy as sp
 
-from .config import WORKER_CPU_SECONDS, WORKER_AS_MB, WORKER_TIMEOUT, ENABLE_PERSISTENT_WORKER, WORKER_POOL_SIZE
+from .config import (
+	WORKER_CPU_SECONDS, WORKER_AS_MB, WORKER_TIMEOUT, ENABLE_PERSISTENT_WORKER, WORKER_POOL_SIZE,
+	CACHE_SIZE_EVAL, CACHE_SIZE_SOLVE,
+)
 from .parser import parse_preprocessed
+from .types import ValidationError, ParseError
+
+try:
+	from .logging_config import get_logger
+	logger = get_logger("worker")
+except ImportError:
+	# Fallback if logging not available
+	class NullLogger:
+		def debug(self, *args, **kwargs): pass
+		def info(self, *args, **kwargs): pass
+		def warning(self, *args, **kwargs): pass
+		def error(self, *args, **kwargs): pass
+		def exception(self, *args, **kwargs): pass
+	logger = NullLogger()
 
 HAS_RESOURCE = False
 try:
@@ -20,11 +37,12 @@ except Exception:
 	HAS_RESOURCE = False
 
 try:
-	from multiprocessing import Process, Queue, Event
+	from multiprocessing import Process, Queue, Event, Manager
 except Exception:
 	Process = None  # type: ignore
 	Queue = None  # type: ignore
 	Event = None  # type: ignore
+	Manager = None  # type: ignore
 
 
 def _limit_resources():
@@ -36,15 +54,25 @@ def _limit_resources():
 
 
 def worker_evaluate(preprocessed_expr: str) -> Dict[str, Any]:
+	"""Evaluate a preprocessed expression in a sandboxed worker."""
+	logger.debug(f"Evaluating expression: {preprocessed_expr[:100]}...")
 	if HAS_RESOURCE:
 		try:
 			_limit_resources()
-		except Exception:
-			pass
+			logger.debug("Resource limits applied")
+		except (OSError, ValueError) as e:
+			logger.warning(f"Failed to apply resource limits: {e}")
 	try:
 		expr = parse_preprocessed(preprocessed_expr)
+	except ValidationError as e:
+		logger.warning(f"Validation error: {e.code} - {e.message}")
+		return {"ok": False, "error": str(e), "error_code": e.code}
+	except (ValueError, SyntaxError) as e:
+		logger.warning(f"Parse error: {e}")
+		return {"ok": False, "error": f"Parse error: {e}", "error_code": "PARSE_ERROR"}
 	except Exception as e:
-		return {"ok": False, "error": f"Parse error in worker: {e}"}
+		logger.exception("Unexpected parse error in worker")
+		return {"ok": False, "error": "Parse error in worker", "error_code": "UNKNOWN_ERROR"}
 	try:
 		res = sp.simplify(expr)
 		result_str = str(res)
@@ -55,11 +83,13 @@ def worker_evaluate(preprocessed_expr: str) -> Dict[str, Any]:
 			approx_str = str(approx_val)
 			if approx_str not in ("zoo", "oo", "-oo", "nan"):
 				approx = approx_str
-		except Exception:
+		except (ValueError, TypeError, ArithmeticError):
 			approx = None
 		return {"ok": True, "result": result_str, "approx": approx, "free_symbols": free_syms}
+	except (ValueError, TypeError, ArithmeticError) as e:
+		return {"ok": False, "error": f"Evaluation failed: {e}", "error_code": "EVAL_ERROR"}
 	except Exception as e:
-		return {"ok": False, "error": f"Evaluation failed: {e}"}
+		return {"ok": False, "error": "Evaluation failed", "error_code": "UNKNOWN_ERROR"}
 
 
 def _build_self_cmd(args: List[str]) -> List[str]:
@@ -70,6 +100,45 @@ def _build_self_cmd(args: List[str]) -> List[str]:
 
 
 import uuid
+import time
+
+
+def _retry_with_backoff(func, max_retries: int = 3, initial_delay: float = 0.1, max_delay: float = 2.0) -> Any:
+	"""Retry a function with exponential backoff.
+	
+	Args:
+		func: Callable that returns a result or raises an exception
+		max_retries: Maximum number of retry attempts
+		initial_delay: Initial delay in seconds
+		max_delay: Maximum delay cap in seconds
+		
+	Returns:
+		Result from func() if successful
+		
+	Raises:
+		Last exception if all retries fail
+	"""
+	delay = initial_delay
+	last_exception = None
+	
+	for attempt in range(max_retries + 1):
+		try:
+			return func()
+		except Exception as e:
+			last_exception = e
+			error_code = getattr(e, 'code', None)
+			# Check if error is transient (retryable)
+			transient_codes = {"COMM_ERROR", "TIMEOUT", "UNKNOWN_ERROR"}
+			if error_code not in transient_codes and attempt < max_retries:
+				# Fatal error, don't retry
+				raise
+			if attempt < max_retries:
+				logger.debug(f"Retry attempt {attempt + 1}/{max_retries} after {delay:.2f}s")
+				time.sleep(delay)
+				delay = min(delay * 2, max_delay)
+	
+	# All retries exhausted
+	raise last_exception
 
 
 class _WorkerManager:
@@ -80,12 +149,18 @@ class _WorkerManager:
 		self.stop_event = None
 		self._next_idx = 0
 		self._resp_buffer = {}
+		self._manager = None
+		self._cancel_flags: Optional[Dict[str, bool]] = None  # req_id -> cancel flag (shared dict)
 
 	def start(self) -> None:
-		if not ENABLE_PERSISTENT_WORKER or Process is None:
+		if not ENABLE_PERSISTENT_WORKER or Process is None or Manager is None:
 			return
 		if self.is_alive():
 			return
+		# Create Manager for shared state (works on Windows)
+		if self._manager is None:
+			self._manager = Manager()
+			self._cancel_flags = self._manager.dict()
 		self.res_q = Queue()
 		self.stop_event = Event()
 		self.req_qs = []
@@ -93,7 +168,7 @@ class _WorkerManager:
 		n = max(1, int(WORKER_POOL_SIZE or 1))
 		for _ in range(n):
 			req = Queue()
-			proc = Process(target=_worker_daemon_main, args=(req, self.res_q, self.stop_event), daemon=True)
+			proc = Process(target=_worker_daemon_main, args=(req, self.res_q, self.stop_event, self._cancel_flags), daemon=True)
 			proc.start()
 			self.req_qs.append(req)
 			self.procs.append(proc)
@@ -114,6 +189,15 @@ class _WorkerManager:
 			self.req_qs = []
 			self.res_q = None
 			self.stop_event = None
+			if self._cancel_flags is not None:
+				self._cancel_flags.clear()
+
+	def cancel_request(self, req_id: str) -> bool:
+		"""Cancel a pending request by ID. Returns True if cancellation flag was found."""
+		if self._cancel_flags is not None and req_id in self._cancel_flags:
+			self._cancel_flags[req_id] = True
+			return True
+		return False
 
 	def request(self, payload: Dict[str, Any], timeout: int) -> Optional[Dict[str, Any]]:
 		if not ENABLE_PERSISTENT_WORKER or Process is None:
@@ -126,7 +210,13 @@ class _WorkerManager:
 			# Correlate with an ID and route via round-robin to workers
 			req_id = payload.get("id") or str(uuid.uuid4())
 			payload = {**payload, "id": req_id}
+			# Initialize cancellation flag in shared dict
+			if self._cancel_flags is not None:
+				self._cancel_flags[req_id] = False
+			
 			if not self.req_qs:
+				if self._cancel_flags and req_id in self._cancel_flags:
+					del self._cancel_flags[req_id]
 				return None
 			idx = self._next_idx % len(self.req_qs)
 			self._next_idx += 1
@@ -134,31 +224,61 @@ class _WorkerManager:
 			# First, see if we already buffered this id
 			if req_id in self._resp_buffer:
 				resp = self._resp_buffer.pop(req_id)
+				if self._cancel_flags and req_id in self._cancel_flags:
+					del self._cancel_flags[req_id]
 				return resp
 			# Otherwise, read from res_q until matching id
 			while True:
-				msg = self.res_q.get(timeout=timeout)
+				if self._cancel_flags and self._cancel_flags.get(req_id, False):
+					if req_id in self._cancel_flags:
+						del self._cancel_flags[req_id]
+					return {"ok": False, "error": "Request cancelled", "error_code": "CANCELLED"}
+				try:
+					msg = self.res_q.get(timeout=min(0.5, timeout))
+				except Exception:
+					# Timeout - check cancellation
+					if self._cancel_flags and self._cancel_flags.get(req_id, False):
+						if req_id in self._cancel_flags:
+							del self._cancel_flags[req_id]
+						return {"ok": False, "error": "Request cancelled", "error_code": "CANCELLED"}
+					continue
 				mid = msg.get("id")
 				if mid == req_id:
 					msg.pop("id", None)
+					if self._cancel_flags and req_id in self._cancel_flags:
+						del self._cancel_flags[req_id]
 					return msg
 				# buffer for future requests
 				self._resp_buffer[mid] = msg
 		except Exception:
+			req_id = payload.get("id")
+			if req_id and self._cancel_flags and req_id in self._cancel_flags:
+				del self._cancel_flags[req_id]
 			try:
 				self.stop()
 				self.start()
 				if self.is_alive():
 					req_id = payload.get("id") or str(uuid.uuid4())
 					payload = {**payload, "id": req_id}
+					if self._cancel_flags is not None:
+						self._cancel_flags[req_id] = False
 					idx = self._next_idx % len(self.req_qs)
 					self._next_idx += 1
 					self.req_qs[idx].put(payload)
 					while True:
-						msg = self.res_q.get(timeout=timeout)
+						if self._cancel_flags and self._cancel_flags.get(req_id, False):
+							if req_id in self._cancel_flags:
+								del self._cancel_flags[req_id]
+							return {"ok": False, "error": "Request cancelled", "error_code": "CANCELLED"}
+						try:
+							msg = self.res_q.get(timeout=min(0.5, timeout))
+						except Exception:
+							continue
 						mid = msg.get("id")
 						if mid == req_id:
 							msg.pop("id", None)
+							if self._cancel_flags and req_id in self._cancel_flags:
+								del self._cancel_flags[req_id]
 							return msg
 						self._resp_buffer[mid] = msg
 			except Exception:
@@ -166,7 +286,8 @@ class _WorkerManager:
 			return None
 
 
-def _worker_daemon_main(req_q, res_q, stop_event) -> None:
+def _worker_daemon_main(req_q, res_q, stop_event, cancel_flags) -> None:
+	"""Worker daemon main loop that processes requests from queue."""
 	if HAS_RESOURCE:
 		try:
 			_limit_resources()
@@ -181,20 +302,35 @@ def _worker_daemon_main(req_q, res_q, stop_event) -> None:
 			continue
 		try:
 			kind = msg.get("type")
+			req_id = msg.get("id")
+			
+			# Check cancellation before processing
+			if cancel_flags and cancel_flags.get(req_id, False):
+				res_q.put({"ok": False, "error": "Request cancelled", "error_code": "CANCELLED", "id": req_id})
+				continue
+			
 			if kind == "eval":
 				pre = msg.get("preprocessed") or ""
 				out = worker_evaluate(pre)
-				out["id"] = msg.get("id")
-				res_q.put(out)
+				out["id"] = req_id
+				# Check cancellation after processing
+				if cancel_flags and cancel_flags.get(req_id, False):
+					res_q.put({"ok": False, "error": "Request cancelled", "error_code": "CANCELLED", "id": req_id})
+				else:
+					res_q.put(out)
 			elif kind == "solve":
 				payload = msg.get("payload") or {}
 				out = _worker_solve_dispatch(payload)
-				out["id"] = msg.get("id")
-				res_q.put(out)
+				out["id"] = req_id
+				# Check cancellation after processing
+				if cancel_flags and cancel_flags.get(req_id, False):
+					res_q.put({"ok": False, "error": "Request cancelled", "error_code": "CANCELLED", "id": req_id})
+				else:
+					res_q.put(out)
 			else:
-				res_q.put({"ok": False, "error": "Unknown request type"})
+				res_q.put({"ok": False, "error": "Unknown request type", "id": req_id})
 		except Exception as e:
-			res_q.put({"ok": False, "error": f"Worker daemon error: {e}"})
+			res_q.put({"ok": False, "error": f"Worker daemon error: {e}", "id": msg.get("id")})
 
 
 def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -230,7 +366,7 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
 _WORKER_MANAGER = _WorkerManager()
 
 
-@lru_cache(maxsize=2048)
+@lru_cache(maxsize=CACHE_SIZE_EVAL)
 def _worker_eval_cached(preprocessed_expr: str) -> str:
 	resp = _WORKER_MANAGER.request({"type": "eval", "preprocessed": preprocessed_expr}, timeout=WORKER_TIMEOUT)
 	if isinstance(resp, dict):
@@ -240,7 +376,7 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
 	return proc.stdout or ""
 
 
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=CACHE_SIZE_SOLVE)
 def _worker_solve_cached(payload_json: str) -> str:
 	try:
 		payload = json.loads(payload_json)
@@ -255,20 +391,29 @@ def _worker_solve_cached(payload_json: str) -> str:
 
 
 def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> Dict[str, Any]:
+	"""Safely evaluate an expression string via worker sandbox."""
 	from .parser import preprocess
 	try:
 		pre = preprocess(expr)
+	except ValidationError as e:
+		return {"ok": False, "error": str(e), "error_code": e.code}
+	except ValueError as e:
+		return {"ok": False, "error": f"Preprocess error: {e}", "error_code": "PREPROCESS_ERROR"}
 	except Exception as e:
-		return {"ok": False, "error": f"Preprocess error: {e}"}
+		return {"ok": False, "error": "Preprocess error", "error_code": "UNKNOWN_ERROR"}
 	try:
 		stdout_text = _worker_eval_cached(pre)
 	except subprocess.TimeoutExpired:
-		return {"ok": False, "error": "Evaluation timed out."}
+		return {"ok": False, "error": "Evaluation timed out.", "error_code": "TIMEOUT"}
+	except Exception as e:
+		return {"ok": False, "error": "Worker communication failed", "error_code": "COMM_ERROR"}
 	try:
 		data = json.loads(stdout_text)
 		return data
+	except (json.JSONDecodeError, ValueError) as e:
+		return {"ok": False, "error": f"Invalid worker output: {e}.", "error_code": "INVALID_OUTPUT"}
 	except Exception as e:
-		return {"ok": False, "error": f"Invalid worker output: {e}."}
+		return {"ok": False, "error": "Invalid worker output", "error_code": "UNKNOWN_ERROR"}
 
 
 def clear_caches() -> None:
@@ -280,3 +425,10 @@ def clear_caches() -> None:
 		_pp.cache_clear()
 	except Exception:
 		pass
+
+
+def cancel_current_request(req_id: Optional[str] = None) -> bool:
+	"""Cancel a pending worker request. If req_id is None, attempts to cancel the most recent."""
+	if req_id:
+		return _WORKER_MANAGER.cancel_request(req_id)
+	return False  # For now, requires explicit ID - can be enhanced
