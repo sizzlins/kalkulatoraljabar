@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
+# Type annotations use modern | syntax (no import needed)
 from .calculus import differentiate, integrate, matrix_determinant
 from .parser import preprocess
 from .plotting import plot_function
-from .solver import solve_inequality, solve_single_equation, solve_system
+from .solver import (
+    solve_inequality as _solve_inequality,
+)
+from .solver import (
+    solve_single_equation,
+)
+from .solver import (
+    solve_system as _solve_system,
+)
 from .types import EvalResult, InequalityResult, SolveResult, ValidationError
 from .worker import evaluate_safely
 
@@ -32,7 +39,7 @@ def evaluate(expression: str) -> EvalResult:
     )
 
 
-def solve_equation(equation: str, find_var: Optional[str] = None) -> SolveResult:
+def solve_equation(equation: str, find_var: str | None = None) -> SolveResult:
     """Solve a single equation.
 
     Args:
@@ -81,7 +88,7 @@ def solve_equation(equation: str, find_var: Optional[str] = None) -> SolveResult
 
 
 def solve_inequality(
-    inequality: str, find_var: Optional[str] = None
+    inequality: str, find_var: str | None = None
 ) -> InequalityResult:
     """Solve an inequality.
 
@@ -101,13 +108,13 @@ def solve_inequality(
         >>> print(result.solutions)
         {'x': '1 < x < 5'}
     """
-    data = solve_inequality(inequality, find_var)
+    data = _solve_inequality(inequality, find_var)
     if not data.get("ok"):
         return InequalityResult(ok=False, error=data.get("error"))
     return InequalityResult(ok=True, solutions=data.get("solutions"))
 
 
-def solve_system(equations: str, find_var: Optional[str] = None) -> SolveResult:
+def solve_system(equations: str, find_var: str | None = None) -> SolveResult:
     """Solve a system of equations.
 
     Args:
@@ -126,7 +133,7 @@ def solve_system(equations: str, find_var: Optional[str] = None) -> SolveResult:
         >>> print(result.exact)
         ['2']
     """
-    data = solve_system(equations, find_var)
+    data = _solve_system(equations, find_var)
     if not data.get("ok"):
         return SolveResult(ok=False, result_type="system", error=data.get("error"))
 
@@ -144,7 +151,7 @@ def solve_system(equations: str, find_var: Optional[str] = None) -> SolveResult:
         )
 
 
-def validate_expression(expression: str) -> tuple[bool, Optional[str]]:
+def validate_expression(expression: str) -> tuple[bool, str | None]:
     """Validate an expression without evaluating it.
 
     Args:
@@ -183,7 +190,7 @@ def validate_expression(expression: str) -> tuple[bool, Optional[str]]:
         return False, "Unexpected validation error"
 
 
-def diff(expression: str, variable: Optional[str] = None) -> EvalResult:
+def diff(expression: str, variable: str | None = None) -> EvalResult:
     """Differentiate an expression.
 
     Args:
@@ -205,7 +212,7 @@ def diff(expression: str, variable: Optional[str] = None) -> EvalResult:
     return differentiate(expression, variable)
 
 
-def integrate_expr(expression: str, variable: Optional[str] = None) -> EvalResult:
+def integrate_expr(expression: str, variable: str | None = None) -> EvalResult:
     """Integrate an expression.
 
     Args:
