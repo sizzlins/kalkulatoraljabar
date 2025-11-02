@@ -87,9 +87,7 @@ def solve_equation(equation: str, find_var: str | None = None) -> SolveResult:
         )
 
 
-def solve_inequality(
-    inequality: str, find_var: str | None = None
-) -> InequalityResult:
+def solve_inequality(inequality: str, find_var: str | None = None) -> InequalityResult:
     """Solve an inequality.
 
     Args:
