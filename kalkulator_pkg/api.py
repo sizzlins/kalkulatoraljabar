@@ -6,15 +6,9 @@ from __future__ import annotations
 from .calculus import differentiate, integrate, matrix_determinant
 from .parser import preprocess
 from .plotting import plot_function
-from .solver import (
-    solve_inequality as _solve_inequality,
-)
-from .solver import (
-    solve_single_equation,
-)
-from .solver import (
-    solve_system as _solve_system,
-)
+from .solver import solve_inequality as _solve_inequality
+from .solver import solve_single_equation
+from .solver import solve_system as _solve_system
 from .types import EvalResult, InequalityResult, SolveResult, ValidationError
 from .worker import evaluate_safely
 
