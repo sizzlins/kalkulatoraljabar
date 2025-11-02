@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 import sympy as sp
 
 from .parser import parse_preprocessed
@@ -11,7 +9,7 @@ from .types import EvalResult
 from .worker import evaluate_safely
 
 
-def differentiate(expression: str, variable: Optional[str] = None) -> EvalResult:
+def differentiate(expression: str, variable: str | None = None) -> EvalResult:
     """Differentiate an expression with respect to a variable.
 
     Args:
@@ -59,7 +57,7 @@ def differentiate(expression: str, variable: Optional[str] = None) -> EvalResult
         return EvalResult(ok=False, error="Differentiation failed unexpectedly")
 
 
-def integrate(expression: str, variable: Optional[str] = None) -> EvalResult:
+def integrate(expression: str, variable: str | None = None) -> EvalResult:
     """Integrate an expression with respect to a variable.
 
     Args:

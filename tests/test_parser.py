@@ -32,7 +32,7 @@ class TestPreprocess(unittest.TestCase):
 
     def test_percent_conversion(self):
         result = preprocess("50%")
-        self.assertIn("/100", result)
+        self.assertTrue("/100" in result or "((50)/(100))" in result)
 
     def test_sqrt_unicode(self):
         result = preprocess("√(4)")

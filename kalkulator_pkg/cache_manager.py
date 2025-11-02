@@ -10,9 +10,8 @@ This module provides:
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 try:
     from .logging_config import get_logger
@@ -39,7 +38,7 @@ def _get_cache_file() -> Path:
     return _CACHE_FILE
 
 
-def load_persistent_cache() -> Dict[str, Any]:
+def load_persistent_cache() -> dict[str, Any]:
     """Load persistent cache from disk.
 
     Returns:
@@ -58,13 +57,13 @@ def load_persistent_cache() -> Dict[str, Any]:
         }
 
     try:
-        with open(cache_file, "r", encoding="utf-8") as f:
+        with open(cache_file, encoding="utf-8") as f:
             data = json.load(f)
 
         # Check version compatibility
         if data.get("version") != _CACHE_VERSION:
             if logger:
-                logger.info(f"Cache version mismatch, clearing old cache")
+                logger.info("Cache version mismatch, clearing old cache")
             return {
                 "version": _CACHE_VERSION,
                 "eval_cache": {},
@@ -83,7 +82,7 @@ def load_persistent_cache() -> Dict[str, Any]:
             )
 
         return data
-    except (json.JSONDecodeError, IOError, OSError) as e:
+    except (json.JSONDecodeError, OSError) as e:
         if logger:
             logger.warning(f"Failed to load cache: {e}, starting with empty cache")
         return {
@@ -93,7 +92,7 @@ def load_persistent_cache() -> Dict[str, Any]:
         }
 
 
-def save_persistent_cache(cache_data: Dict[str, Any]) -> None:
+def save_persistent_cache(cache_data: dict[str, Any]) -> None:
     """Save persistent cache to disk.
 
     Args:
@@ -128,16 +127,16 @@ def save_persistent_cache(cache_data: Dict[str, Any]) -> None:
             logger.debug(
                 f"Saved cache: {len(eval_cache)} eval, {len(subexpr_cache)} subexpr entries"
             )
-    except (IOError, OSError, TypeError) as e:
+    except (OSError, TypeError) as e:
         if logger:
             logger.warning(f"Failed to save cache: {e}")
 
 
 # Global cache storage
-_persistent_cache: Optional[Dict[str, Any]] = None
+_persistent_cache: dict[str, Any] | None = None
 
 
-def get_persistent_cache() -> Dict[str, Any]:
+def get_persistent_cache() -> dict[str, Any]:
     """Get or initialize the persistent cache."""
     global _persistent_cache
     if _persistent_cache is None:
@@ -167,7 +166,7 @@ def update_subexpr_cache(preprocessed_expr: str, result_value: str) -> None:
     cache["subexpr_cache"][preprocessed_expr] = result_value
 
 
-def get_cached_eval(preprocessed_expr: str) -> Optional[str]:
+def get_cached_eval(preprocessed_expr: str) -> str | None:
     """Get cached evaluation result if available.
 
     Args:
@@ -180,7 +179,7 @@ def get_cached_eval(preprocessed_expr: str) -> Optional[str]:
     return cache["eval_cache"].get(preprocessed_expr)
 
 
-def get_cached_subexpr(preprocessed_expr: str) -> Optional[str]:
+def get_cached_subexpr(preprocessed_expr: str) -> str | None:
     """Get cached sub-expression value if available.
 
     Args:
@@ -227,7 +226,7 @@ def export_cache_to_file(file_path: str) -> bool:
         if logger:
             logger.debug(f"Exported cache to {file_path}")
         return True
-    except (IOError, OSError, TypeError) as e:
+    except (OSError, TypeError) as e:
         if logger:
             logger.warning(f"Failed to export cache: {e}")
         return False
@@ -244,7 +243,7 @@ def import_cache_from_file(file_path: str) -> bool:
     """
     global _persistent_cache
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             imported_data = json.load(f)
 
         # Validate structure
@@ -273,7 +272,7 @@ def import_cache_from_file(file_path: str) -> bool:
         if logger:
             logger.debug(f"Imported and merged cache from {file_path}")
         return True
-    except (IOError, OSError, json.JSONDecodeError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         if logger:
             logger.warning(f"Failed to import cache: {e}")
         return False
@@ -290,7 +289,7 @@ def replace_cache_from_file(file_path: str) -> bool:
     """
     global _persistent_cache
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             imported_data = json.load(f)
 
         # Validate structure and version
@@ -322,7 +321,7 @@ def replace_cache_from_file(file_path: str) -> bool:
         if logger:
             logger.debug(f"Replaced cache from {file_path}")
         return True
-    except (IOError, OSError, json.JSONDecodeError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         if logger:
             logger.warning(f"Failed to replace cache: {e}")
         return False

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import sympy as sp
 
@@ -17,6 +17,7 @@ from .parser import (
     split_top_level_commas,
 )
 from .solver import solve_inequality, solve_single_equation, solve_system
+from .types import ParseError, ValidationError
 from .worker import evaluate_safely
 
 
@@ -147,7 +148,7 @@ def _health_check() -> int:
     return 0
 
 
-def print_result_pretty(res: Dict[str, Any], output_format: str = "human") -> None:
+def print_result_pretty(res: dict[str, Any], output_format: str = "human") -> None:
     """Print result in specified format.
 
     Args:
@@ -226,7 +227,7 @@ def print_result_pretty(res: Dict[str, Any], output_format: str = "human") -> No
             return
         try:
             print(f"{res_str}")
-        except (UnicodeEncodeError, OSError) as e:
+        except (UnicodeEncodeError, OSError):
             # Handle encoding errors on Windows console
             try:
                 # Try printing without formatting
@@ -251,10 +252,10 @@ def print_result_pretty(res: Dict[str, Any], output_format: str = "human") -> No
 def repl_loop(output_format: str = "human") -> None:
     """Interactive REPL loop with graceful interrupt handling."""
     try:
-        import readline  # type: ignore
+        import readline  # noqa: F401
     except (ImportError, ModuleNotFoundError):
         # readline not available on Windows - that's fine
-        readline = None  # type: ignore
+        pass
     print("Kalkulator Aljabar — type 'help' for commands, 'quit' to exit.")
     _current_req_id = None  # Track current request for cancellation
     _timing_enabled = False  # Track whether timing is enabled
@@ -316,21 +317,23 @@ def repl_loop(output_format: str = "human") -> None:
                 eval_cache = cache.get("eval_cache", {})
                 subexpr_cache = cache.get("subexpr_cache", {})
 
-                print(f"\n=== Cache Status ===")
+                print("\n=== Cache Status ===")
                 print(f"Evaluation cache entries: {len(eval_cache)}")
                 print(f"Sub-expression cache entries: {len(subexpr_cache)}")
                 print(f"Total entries: {len(eval_cache) + len(subexpr_cache)}")
 
                 if subexpr_cache:
-                    print(f"\n=== Sub-expression Cache (showing first 20) ===")
-                    for i, (expr, value) in enumerate(list(subexpr_cache.items())[:20]):
+                    print("\n=== Sub-expression Cache (showing first 20) ===")
+                    for _i, (expr, value) in enumerate(
+                        list(subexpr_cache.items())[:20]
+                    ):
                         print(f"  {expr} → {value}")
                     if len(subexpr_cache) > 20:
                         print(f"  ... and {len(subexpr_cache) - 20} more entries")
 
                 if eval_cache:
-                    print(f"\n=== Evaluation Cache (showing first 10) ===")
-                    for i, (expr, result_json) in enumerate(
+                    print("\n=== Evaluation Cache (showing first 10) ===")
+                    for _i, (expr, result_json) in enumerate(
                         list(eval_cache.items())[:10]
                     ):
                         try:
@@ -353,7 +356,6 @@ def repl_loop(output_format: str = "human") -> None:
         if raw.lower().startswith("savecache"):
             try:
                 import os
-                from pathlib import Path
 
                 from .cache_manager import export_cache_to_file, get_persistent_cache
 
@@ -751,7 +753,7 @@ Calculus & matrices (new):
     print(help_text)
 
 
-def main_entry(argv: Optional[List[str]] = None) -> int:
+def main_entry(argv: list[str] | None = None) -> int:
     """
     Main entry point for Kalkulator CLI.
 

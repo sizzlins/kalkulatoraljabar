@@ -22,7 +22,7 @@ class TestParsingPerformance:
         start = time.time()
         for _ in range(100):
             preprocessed = preprocess(expr)
-            parsed = parse_preprocessed(preprocessed)
+            _ = parse_preprocessed(preprocessed)  # noqa: F841
         elapsed = time.time() - start
         # Should parse 100 expressions in reasonable time (< 1 second)
         assert elapsed < 1.0, f"Parsing too slow: {elapsed}s"
@@ -33,7 +33,7 @@ class TestParsingPerformance:
         start = time.time()
         for _ in range(50):
             preprocessed = preprocess(expr)
-            parsed = parse_preprocessed(preprocessed)
+            _ = parse_preprocessed(preprocessed)  # noqa: F841
         elapsed = time.time() - start
         # Complex expressions should still parse reasonably
         assert elapsed < 2.0, f"Complex parsing too slow: {elapsed}s"
@@ -84,12 +84,12 @@ class TestEvaluationPerformance:
 
         # First evaluation (cache miss)
         start1 = time.time()
-        result1 = evaluate_safely(expr)
+        _ = evaluate_safely(expr)  # noqa: F841
         time1 = time.time() - start1
 
         # Second evaluation (cache hit)
         start2 = time.time()
-        result2 = evaluate_safely(expr)
+        _ = evaluate_safely(expr)  # noqa: F841
         time2 = time.time() - start2
 
         # Cache hit should be faster (or at least not significantly slower)

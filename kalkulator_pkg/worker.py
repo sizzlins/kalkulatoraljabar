@@ -4,13 +4,14 @@ import json
 import os
 import subprocess
 import sys
+import time
+import uuid
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import sympy as sp
 
 from .config import (
-    CACHE_SIZE_EVAL,
     CACHE_SIZE_SOLVE,
     ENABLE_PERSISTENT_WORKER,
     WORKER_AS_MB,
@@ -91,7 +92,7 @@ def _limit_resources() -> None:
         pass
 
 
-def worker_evaluate(preprocessed_expr: str) -> Dict[str, Any]:
+def worker_evaluate(preprocessed_expr: str) -> dict[str, Any]:
     """Evaluate a preprocessed expression in a sandboxed worker."""
     logger.debug(f"Evaluating expression: {preprocessed_expr[:100]}...")
     if HAS_RESOURCE:
@@ -199,7 +200,7 @@ def worker_evaluate(preprocessed_expr: str) -> Dict[str, Any]:
         }
 
 
-def _build_self_cmd(args: List[str]) -> List[str]:
+def _build_self_cmd(args: list[str]) -> list[str]:
     if getattr(sys, "frozen", False):
         return [os.path.realpath(sys.argv[0])] + args
     else:
@@ -209,10 +210,6 @@ def _build_self_cmd(args: List[str]) -> List[str]:
                 os.path.join(os.path.dirname(__file__), "..", "kalkulator.py")
             ),
         ] + args
-
-
-import time
-import uuid
 
 
 def _retry_with_backoff(
@@ -266,7 +263,7 @@ class _WorkerManager:
         self._next_idx = 0
         self._resp_buffer = {}
         self._manager = None
-        self._cancel_flags: Optional[Dict[str, bool]] = (
+        self._cancel_flags: dict[str, bool] | None = (
             None  # req_id -> cancel flag (shared dict)
         )
 
@@ -339,9 +336,7 @@ class _WorkerManager:
             return True
         return False
 
-    def request(
-        self, payload: Dict[str, Any], timeout: int
-    ) -> Optional[Dict[str, Any]]:
+    def request(self, payload: dict[str, Any], timeout: int) -> dict[str, Any] | None:
         if not ENABLE_PERSISTENT_WORKER or Process is None:
             return None
         if not self.is_alive():
@@ -388,7 +383,7 @@ class _WorkerManager:
                     except Exception:
                         pass
                     raise
-                except Exception as e:
+                except Exception:
                     # Queue timeout or other error - check cancellation
                     # Expected: queue.Empty on timeout, which is caught by generic Exception
                     # This is acceptable as queue.Empty is not available in all Python versions
@@ -597,7 +592,7 @@ def _worker_daemon_main(
             )
 
 
-def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _worker_solve_dispatch(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         eqs_input = payload.get("equations", [])
         eq_objs = []
@@ -694,7 +689,7 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
         complex_sols = []
         for sol in solutions:
             is_real = True
-            for var, val in sol.items():
+            for _var, val in sol.items():
                 try:
                     # Check if the value is real (imaginary part is negligible)
                     num_val = sp.N(val)
@@ -941,7 +936,7 @@ def _worker_solve_cached(payload_json: str) -> str:
         return proc.stdout.decode("utf-8", errors="replace") if proc.stdout else ""
 
 
-def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> Dict[str, Any]:
+def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> dict[str, Any]:
     """Safely evaluate an expression string via worker sandbox."""
     from .parser import preprocess
 
@@ -955,7 +950,7 @@ def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> Dict[str, Any]:
             "error": f"Preprocess error: {e}",
             "error_code": "PREPROCESS_ERROR",
         }
-    except (ValueError, TypeError, AttributeError) as e:
+    except (TypeError, AttributeError) as e:
         # Unexpected error in preprocessing - log it
         try:
             from .logging_config import safe_log
@@ -970,7 +965,7 @@ def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> Dict[str, Any]:
         stdout_text = _worker_eval_cached(pre)
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "Evaluation timed out.", "error_code": "TIMEOUT"}
-    except (subprocess.TimeoutExpired, OSError, ValueError) as e:
+    except (OSError, ValueError) as e:
         # Specific exceptions for worker communication failures
         try:
             from .logging_config import safe_log
@@ -1030,7 +1025,7 @@ def clear_caches() -> None:
         pass
 
 
-def cancel_current_request(req_id: Optional[str] = None) -> bool:
+def cancel_current_request(req_id: str | None = None) -> bool:
     """Cancel a pending worker request. If req_id is None, attempts to cancel the most recent."""
     if req_id:
         return _WORKER_MANAGER.cancel_request(req_id)
