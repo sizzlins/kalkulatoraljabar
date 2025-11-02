@@ -2,7 +2,6 @@
 
 import sys
 import unittest
-from unittest.mock import MagicMock, patch
 
 from kalkulator_pkg.cli import _health_check
 from kalkulator_pkg.worker import HAS_RESOURCE, _limit_resources
@@ -43,7 +42,7 @@ class TestWindowsResourceLimits(unittest.TestCase):
 
             output = io.StringIO()
             with redirect_stdout(output):
-                exit_code = _health_check()
+                exit_code = _health_check()  # noqa: F841
 
             output_str = output.getvalue()
             # Should mention Windows or resource limits or DEPLOYMENT

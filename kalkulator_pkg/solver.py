@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import sympy as sp
 
@@ -37,7 +37,7 @@ from .config import (
     ROOT_SEARCH_TOLERANCE,
     VAR_NAME_RE,
 )
-from .parser import parse_preprocessed, prettify_expr
+from .parser import parse_preprocessed
 from .types import EvalResult, ParseError, ValidationError
 from .worker import _worker_solve_cached, evaluate_safely
 
@@ -133,7 +133,7 @@ def is_pell_equation_from_eq(eq: sp.Eq) -> bool:
     return True
 
 
-def fundamental_solution(D: int) -> Tuple[int, int]:
+def fundamental_solution(D: int) -> tuple[int, int]:
     """
     Find the fundamental solution to Pell's equation x^2 - D*y^2 = 1.
 
@@ -242,7 +242,7 @@ def solve_pell_equation_from_eq(eq: sp.Eq) -> str:
 ZERO_TOL = 1e-12
 
 
-def _solve_linear_equation(equation: sp.Eq, variable: sp.Symbol) -> List[sp.Basic]:
+def _solve_linear_equation(equation: sp.Eq, variable: sp.Symbol) -> list[sp.Basic]:
     """Solve a linear equation of the form a*x + b = 0.
 
     Args:
@@ -264,7 +264,7 @@ def _solve_linear_equation(equation: sp.Eq, variable: sp.Symbol) -> List[sp.Basi
         return []
 
 
-def _solve_quadratic_equation(equation: sp.Eq, variable: sp.Symbol) -> List[sp.Basic]:
+def _solve_quadratic_equation(equation: sp.Eq, variable: sp.Symbol) -> list[sp.Basic]:
     """Solve a quadratic equation using polynomial factorization.
 
     Args:
@@ -296,7 +296,7 @@ def _solve_quadratic_equation(equation: sp.Eq, variable: sp.Symbol) -> List[sp.B
         return []
 
 
-def _solve_polynomial_equation(equation: sp.Eq, variable: sp.Symbol) -> List[sp.Basic]:
+def _solve_polynomial_equation(equation: sp.Eq, variable: sp.Symbol) -> list[sp.Basic]:
     """Solve a polynomial equation using Poly root finding.
 
     Args:
@@ -328,9 +328,9 @@ def _solve_polynomial_equation(equation: sp.Eq, variable: sp.Symbol) -> List[sp.
 def _numeric_roots_for_single_var(
     expr: sp.Basic,
     variable: sp.Symbol,
-    interval: Tuple[float, float] = (-4 * sp.pi, 4 * sp.pi),
-    max_guesses: Optional[int] = None,
-) -> List[sp.Number]:
+    interval: tuple[float, float] = (-4 * sp.pi, 4 * sp.pi),
+    max_guesses: int | None = None,
+) -> list[sp.Number]:
     """Find numeric roots of expression using multiple strategies.
 
     Args:
@@ -344,7 +344,7 @@ def _numeric_roots_for_single_var(
     """
     if max_guesses is None:
         max_guesses = MAX_NSOLVE_GUESSES
-    roots: List[float] = []
+    roots: list[float] = []
     interval_min, interval_max = float(interval[0]), float(interval[1])
 
     # Strategy 1: Try solveset over the reals within interval
@@ -362,7 +362,7 @@ def _numeric_roots_for_single_var(
             except (ValueError, TypeError):
                 continue
         if finite_values:
-            unique_values = sorted(set(round(x_val, 12) for x_val in finite_values))
+            unique_values = sorted({round(x_val, 12) for x_val in finite_values})
             return [sp.N(root_val) for root_val in unique_values]
     except (ValueError, TypeError, NotImplementedError):
         pass
@@ -375,7 +375,7 @@ def _numeric_roots_for_single_var(
                 if abs(sp.im(root)) < NUMERIC_TOLERANCE:
                     roots.append(float(sp.re(root)))
             if roots:
-                unique_roots = sorted(set(round(x_val, 12) for x_val in roots))
+                unique_roots = sorted({round(x_val, 12) for x_val in roots})
                 return [sp.N(root_val) for root_val in unique_roots]
     except (ValueError, TypeError):
         pass
@@ -409,7 +409,7 @@ def _numeric_roots_for_single_var(
 
     # De-duplicate and limit candidate points
     candidate_points = sorted(
-        set(round(candidate, 8) for candidate in candidate_points)
+        {round(candidate, 8) for candidate in candidate_points}
     )[:COARSE_GRID_MIN_SIZE]
     for guess in candidate_points:
         try:
@@ -435,8 +435,8 @@ def _numeric_roots_for_single_var(
 
 
 def solve_single_equation(
-    eq_str: str, find_var: Optional[str] = None
-) -> Dict[str, Any]:
+    eq_str: str, find_var: str | None = None
+) -> dict[str, Any]:
     """
     Solve a single equation.
 
@@ -1146,8 +1146,8 @@ def solve_single_equation(
                     # Expected for some symbolic solutions
                     approx.append(None)
             return {"ok": True, "type": "equation", "exact": exacts, "approx": approx}
-        multi_solutions: Dict[str, List[str]] = {}
-        multi_approx: Dict[str, List[Optional[str]]] = {}
+        multi_solutions: dict[str, list[str]] = {}
+        multi_approx: dict[str, list[str | None]] = {}
         for sym in symbols:
             try:
                 sols_for_sym = sp.solve(equation, sym)
@@ -1161,7 +1161,7 @@ def solve_single_equation(
                     sols_list = [str(sols_for_sym)]
                     sols_exprs = [sols_for_sym]
                 multi_solutions[str(sym)] = sols_list
-                approx_list: List[Optional[str]] = []
+                approx_list: list[str | None] = []
                 for expr in sols_exprs:
                     try:
                         approx_list.append(str(sp.N(expr)))
@@ -1238,7 +1238,7 @@ def _parse_relational_fallback(rel_str: str) -> sp.Basic:
     return sp.And(*relations) if len(relations) > 1 else relations[0]
 
 
-def solve_inequality(ineq_str: str, find_var: Optional[str] = None) -> Dict[str, Any]:
+def solve_inequality(ineq_str: str, find_var: str | None = None) -> dict[str, Any]:
     """
     Solve an inequality.
 
@@ -1324,7 +1324,7 @@ def solve_inequality(ineq_str: str, find_var: Optional[str] = None) -> Dict[str,
     return {"ok": True, "type": "inequality", "solutions": results}
 
 
-def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
+def solve_system(raw_no_find: str, find_token: str | None) -> dict[str, Any]:
     """
     Solve a system of equations.
 

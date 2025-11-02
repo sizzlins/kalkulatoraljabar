@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -11,12 +11,12 @@ class EvalResult:
     """Result of evaluating a mathematical expression."""
 
     ok: bool
-    result: Optional[str] = None
-    approx: Optional[str] = None
-    free_symbols: Optional[List[str]] = None
-    error: Optional[str] = None
+    result: str | None = None
+    approx: str | None = None
+    free_symbols: list[str] | None = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         result_dict = {"ok": self.ok}
         if self.result is not None:
@@ -49,18 +49,18 @@ class SolveResult:
 
     ok: bool
     result_type: str  # "equation", "pell", "identity_or_contradiction", "multi_isolate", "system"
-    error: Optional[str] = None
+    error: str | None = None
     # For equation type
-    exact: Optional[List[str]] = None
-    approx: Optional[List[Optional[str]]] = None
+    exact: list[str] | None = None
+    approx: list[str | None] | None = None
     # For pell type
-    solution: Optional[str] = None
+    solution: str | None = None
     # For multi_isolate type
-    solutions: Optional[Dict[str, List[str]]] = None
+    solutions: dict[str, list[str]] | None = None
     # For system type
-    system_solutions: Optional[List[Dict[str, str]]] = None
+    system_solutions: list[dict[str, str]] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         result_dict = {"ok": self.ok, "type": self.result_type}
         if self.error is not None:
@@ -101,10 +101,10 @@ class InequalityResult:
 
     ok: bool
     result_type: str = "inequality"
-    error: Optional[str] = None
-    solutions: Optional[Dict[str, str]] = None
+    error: str | None = None
+    solutions: dict[str, str] | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         result_dict = {"ok": self.ok, "type": self.result_type}
         if self.error is not None:

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from functools import lru_cache
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 import sympy as sp
 from sympy import parse_expr
@@ -120,10 +120,10 @@ def prettify_expr(expr_str: str) -> str:
     return result
 
 
-def is_balanced(input_str: str) -> Tuple[bool, Optional[int]]:
+def is_balanced(input_str: str) -> tuple[bool, int | None]:
     """Check if parentheses/brackets are balanced. Returns (is_balanced, error_position)."""
     pairs = {"(": ")", "[": "]", "{": "}"}
-    stack: List[Tuple[str, int]] = []  # (char, position)
+    stack: list[tuple[str, int]] = []  # (char, position)
     for i, char in enumerate(input_str):
         if char in pairs:
             stack.append((char, i))
@@ -167,7 +167,7 @@ FORBIDDEN_TOKENS = (
 
 
 def _validate_expression_tree(
-    expr: Any, depth: int = 0, node_count: List[int] = None
+    expr: Any, depth: int = 0, node_count: list[int] = None
 ) -> None:
     """Validate expression tree structure - reject dangerous nodes."""
     if node_count is None:
@@ -503,9 +503,9 @@ def format_inequality_solution(sol_str: str) -> str:
     return sol_str
 
 
-def split_top_level_commas(input_str: str) -> List[str]:
+def split_top_level_commas(input_str: str) -> list[str]:
     """Split string by commas that are not inside (), [], or {}."""
-    parts: List[str] = []
+    parts: list[str] = []
     current = []
     depth_paren = depth_brack = depth_brace = 0
     for char in input_str:

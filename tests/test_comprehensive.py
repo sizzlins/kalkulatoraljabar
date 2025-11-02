@@ -191,7 +191,7 @@ class TestErrorHandling:
     def test_division_by_zero_expression(self):
         """Test expression that might cause division by zero."""
         # Should not crash, but may return error
-        result = evaluate_safely("1 / 0")
+        _ = evaluate_safely("1 / 0")  # noqa: F841
         # Result depends on SymPy behavior
 
     def test_timeout_handling(self):
@@ -220,7 +220,7 @@ def test_end_to_end_workflow():
     """Test complete workflow from input to output."""
     # Parse
     preprocessed = preprocess("x + 1 = 0")
-    parsed = parse_preprocessed(preprocessed.split("=")[0])
+    _ = parse_preprocessed(preprocessed.split("=")[0])  # noqa: F841
 
     # Solve
     result = solve_single_equation("x + 1 = 0")
