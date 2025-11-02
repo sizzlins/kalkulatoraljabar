@@ -37,10 +37,7 @@ from .config import (
     ROOT_SEARCH_TOLERANCE,
     VAR_NAME_RE,
 )
-from .parser import (
-    parse_preprocessed,
-    prettify_expr,
-)
+from .parser import parse_preprocessed, prettify_expr
 from .types import EvalResult, ParseError, ValidationError
 from .worker import _worker_solve_cached, evaluate_safely
 

@@ -4,8 +4,8 @@ import unittest
 
 from kalkulator_pkg.parser import preprocess
 from kalkulator_pkg.solver import solve_single_equation
-from kalkulator_pkg.worker import evaluate_safely
 from kalkulator_pkg.types import ValidationError
+from kalkulator_pkg.worker import evaluate_safely
 
 
 class TestErrorCodes(unittest.TestCase):
