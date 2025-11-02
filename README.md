@@ -294,7 +294,7 @@ python -m pytest --cov=kalkulator_pkg tests/
 
 ## License
 
-Property of Muhammad Akhiel al Syahbana. Not to be freely distributed without author's permission.
+Property of Muhammad Akhiel al Syahbana. Please give credit to author
 
 ## Version
 
