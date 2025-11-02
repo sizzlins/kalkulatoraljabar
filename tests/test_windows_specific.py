@@ -2,10 +2,10 @@
 
 import sys
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from kalkulator_pkg.worker import HAS_RESOURCE, _limit_resources
 from kalkulator_pkg.cli import _health_check
+from kalkulator_pkg.worker import HAS_RESOURCE, _limit_resources
 
 
 class TestWindowsResourceLimits(unittest.TestCase):
@@ -74,9 +74,10 @@ class TestWindowsCompatibility(unittest.TestCase):
 
     def test_unicode_output_on_windows(self):
         """Test that Unicode output is handled gracefully on Windows."""
-        from kalkulator_pkg.cli import print_result_pretty
         import io
         from contextlib import redirect_stdout
+
+        from kalkulator_pkg.cli import print_result_pretty
 
         # Test with Unicode characters that might cause encoding issues
         result = {

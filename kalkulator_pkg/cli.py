@@ -16,11 +16,7 @@ from .parser import (
     parse_preprocessed,
     split_top_level_commas,
 )
-from .solver import (
-    solve_inequality,
-    solve_single_equation,
-    solve_system,
-)
+from .solver import solve_inequality, solve_single_equation, solve_system
 from .worker import evaluate_safely
 
 
@@ -356,9 +352,10 @@ def repl_loop(output_format: str = "human") -> None:
             continue
         if raw.lower().startswith("savecache"):
             try:
-                from .cache_manager import export_cache_to_file, get_persistent_cache
                 import os
                 from pathlib import Path
+
+                from .cache_manager import export_cache_to_file, get_persistent_cache
 
                 parts = raw.split(None, 1)
                 if len(parts) > 1:
@@ -387,12 +384,13 @@ def repl_loop(output_format: str = "human") -> None:
             continue
         if raw.lower().startswith("loadcache"):
             try:
+                import os
+
                 from .cache_manager import (
+                    get_persistent_cache,
                     import_cache_from_file,
                     replace_cache_from_file,
-                    get_persistent_cache,
                 )
-                import os
 
                 parts = raw.split()
                 replace_mode = False
