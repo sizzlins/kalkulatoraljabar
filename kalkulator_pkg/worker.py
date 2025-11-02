@@ -812,11 +812,7 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
     """Evaluate expression with persistent cache support."""
     # Check persistent cache first
     try:
-        from .cache_manager import (
-            get_cached_eval,
-            update_eval_cache,
-            update_subexpr_cache,
-        )
+        from .cache_manager import get_cached_eval
 
         cached_result = get_cached_eval(preprocessed_expr)
         if cached_result is not None:
@@ -834,7 +830,7 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
         result_json = json.dumps(resp)
         # Save to persistent cache if evaluation was successful
         try:
-            from .cache_manager import update_eval_cache, update_subexpr_cache
+            from .cache_manager import update_eval_cache, update_subexpr_cache  # noqa: F811
 
             if resp.get("ok"):
                 update_eval_cache(preprocessed_expr, result_json)
@@ -866,7 +862,7 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
         result_text = proc.stdout or ""
         # Try to save to persistent cache
         try:
-            from .cache_manager import update_eval_cache, update_subexpr_cache
+            from .cache_manager import update_eval_cache, update_subexpr_cache  # noqa: F811
 
             try:
                 result_data = json.loads(result_text)

@@ -135,16 +135,6 @@ def _health_check() -> int:
         return 1
 
     print("\n[OK] All health checks passed!")
-    try:
-        import sys
-
-        if sys.platform == "win32":
-            try:
-                import resource  # noqa: F401
-            except ImportError:
-                print("[INFO] See DEPLOYMENT.md for Windows deployment recommendations")
-    except Exception:
-        pass
     return 0
 
 
@@ -355,8 +345,6 @@ def repl_loop(output_format: str = "human") -> None:
             continue
         if raw.lower().startswith("savecache"):
             try:
-                import os
-
                 from .cache_manager import export_cache_to_file, get_persistent_cache
 
                 parts = raw.split(None, 1)
@@ -386,7 +374,7 @@ def repl_loop(output_format: str = "human") -> None:
             continue
         if raw.lower().startswith("loadcache"):
             try:
-                import os
+                import os  # noqa: F811
 
                 from .cache_manager import (
                     get_persistent_cache,
