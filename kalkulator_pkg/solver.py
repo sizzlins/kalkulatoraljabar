@@ -517,10 +517,10 @@ def solve_single_equation(
         right_expr = parse_preprocessed(rhs["result"])
     except (ParseError, ValidationError) as e:
         logger.warning("Parse error assembling SymPy expressions", exc_info=True)
-        return {"ok": False, "error": f"Parse error: {e}"}
+        return {"ok": False, "error": f"Parse error: {e}", "error_code": "PARSE_ERROR"}
     except (ValueError, TypeError) as e:
         logger.warning("Type error assembling SymPy expressions", exc_info=True)
-        return {"ok": False, "error": f"Type error: {e}"}
+        return {"ok": False, "error": f"Type error: {e}", "error_code": "TYPE_ERROR"}
     equation = sp.Eq(left_expr, right_expr)
     if is_pell_equation_from_eq(equation):
         try:
@@ -529,10 +529,10 @@ def solve_single_equation(
             return {"ok": True, "type": "pell", "solution": pell_str}
         except ValueError as e:
             logger.warning("Pell solver error: invalid equation", exc_info=True)
-            return {"ok": False, "error": f"Pell solver error: {e}"}
+            return {"ok": False, "error": f"Pell solver error: {e}", "error_code": "PELL_SOLVER_ERROR"}
         except Exception as e:
             logger.error("Unexpected error in Pell solver", exc_info=True)
-            return {"ok": False, "error": f"Pell solver error: {e}"}
+            return {"ok": False, "error": f"Pell solver error: {e}", "error_code": "PELL_SOLVER_ERROR"}
     symbols = list(equation.free_symbols)
     if not symbols:
         try:
@@ -588,7 +588,7 @@ def solve_single_equation(
         if find_var:
             sym = sp.symbols(find_var)
             if sym not in symbols:
-                return {"ok": False, "error": f"Variable '{find_var}' not present."}
+                return {"ok": False, "error": f"Variable '{find_var}' not present.", "error_code": "VARIABLE_NOT_FOUND"}
             sols = sp.solve(equation, sym)
             # Filter to only real solutions
             real_sols = []
@@ -816,7 +816,7 @@ def solve_single_equation(
                             "error_code": "NO_REAL_SOLUTIONS",
                         }
                     # For other errors, return appropriate error message
-                    return {"ok": False, "error": f"Solving error: {solve_err}"}
+                    return {"ok": False, "error": f"Solving error: {solve_err}", "error_code": "SOLVER_ERROR"}
             # Try specialized handlers first for polynomial equations
             try:
                 # Detect equation type and route to appropriate handler
@@ -1090,7 +1090,7 @@ def solve_single_equation(
             "approx": multi_approx,
         }
     except Exception as e:
-        return {"ok": False, "error": f"Solving error: {e}"}
+        return {"ok": False, "error": f"Solving error: {e}", "error_code": "SOLVER_ERROR"}
 
 
 def _parse_relational_fallback(rel_str: str) -> sp.Basic:
@@ -1153,13 +1153,13 @@ def solve_inequality(ineq_str: str, find_var: Optional[str] = None) -> Dict[str,
         parsed = _parse_relational_fallback(ineq_str)
     except (ParseError, ValidationError) as e:
         logger.warning("Failed to parse inequality", exc_info=True)
-        return {"ok": False, "error": f"Parse error: {e}"}
+        return {"ok": False, "error": f"Parse error: {e}", "error_code": "PARSE_ERROR"}
     except (ValueError, TypeError) as e:
         logger.warning("Type error parsing inequality", exc_info=True)
-        return {"ok": False, "error": f"Invalid inequality: {e}"}
+        return {"ok": False, "error": f"Invalid inequality: {e}", "error_code": "INVALID_INEQUALITY"}
     except Exception as e:
         logger.error("Unexpected error parsing inequality", exc_info=True)
-        return {"ok": False, "error": f"Failed to parse inequality: {e}"}
+        return {"ok": False, "error": f"Failed to parse inequality: {e}", "error_code": "PARSE_ERROR"}
     free_syms = list(parsed.free_symbols) if hasattr(parsed, "free_symbols") else []
     if find_var:
         target_sym = None
@@ -1184,7 +1184,7 @@ def solve_inequality(ineq_str: str, find_var: Optional[str] = None) -> Dict[str,
                 }
             except (ValueError, TypeError, AttributeError) as e:
                 logger.warning(f"Error finding variables in inequality: {e}", exc_info=True)
-                return {"ok": False, "error": "No variable found in inequality"}
+                return {"ok": False, "error": "No variable found in inequality", "error_code": "NO_VARIABLE"}
         vars_to_solve = free_syms
     results = {}
     for v in vars_to_solve:
@@ -1234,10 +1234,10 @@ def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
         rhs_s = rhs.strip()
         lhs_eval = evaluate_safely(lhs_s)
         if not lhs_eval.get("ok"):
-            return {"ok": False, "error": f"LHS parse error: {lhs_eval.get('error')}"}
+            return {"ok": False, "error": f"LHS parse error: {lhs_eval.get('error')}", "error_code": lhs_eval.get("error_code", "PARSE_ERROR")}
         rhs_eval = evaluate_safely(rhs_s)
         if not rhs_eval.get("ok"):
-            return {"ok": False, "error": f"RHS parse error: {rhs_eval.get('error')}"}
+            return {"ok": False, "error": f"RHS parse error: {rhs_eval.get('error')}", "error_code": rhs_eval.get("error_code", "PARSE_ERROR")}
         if VAR_NAME_RE.match(lhs_s):
             assignments[lhs_s] = {
                 "result": rhs_eval.get("result"),
@@ -1247,7 +1247,7 @@ def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
             {"lhs": lhs_eval.get("result"), "rhs": rhs_eval.get("result")}
         )
     if not eqs_serialized:
-        return {"ok": False, "error": "No equations parsed."}
+        return {"ok": False, "error": "No equations parsed.", "error_code": "NO_EQUATIONS"}
     if find_token and len(eqs_serialized) == 1:
         pair = eqs_serialized[0]
         lhs_s = pair.get("lhs")
@@ -1357,12 +1357,12 @@ def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
         stdout_text = _worker_solve_cached(json.dumps(payload))
     except (TimeoutError, ValueError, TypeError) as e:
         logger.warning(f"Error in worker-based solving: {e}", exc_info=True)
-        return {"ok": False, "error": "Solving timed out (worker)."}
+        return {"ok": False, "error": "Solving timed out (worker).", "error_code": "TIMEOUT"}
     try:
         data = json.loads(stdout_text)
     except (json.JSONDecodeError, ValueError, TypeError) as e:
         logger.warning(f"Invalid JSON from worker-solve: {e}", exc_info=True)
-        return {"ok": False, "error": f"Invalid worker-solve output: {e}."}
+        return {"ok": False, "error": f"Invalid worker-solve output: {e}.", "error_code": "INVALID_OUTPUT"}
     if not data.get("ok"):
         return data
     sols_list = data.get("solutions", [])
@@ -1373,7 +1373,7 @@ def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
         if find_token in sol_dict:
             found_vals.append(sol_dict[find_token])
     if not found_vals:
-        return {"ok": False, "error": f"No solution found for variable {find_token}."}
+        return {"ok": False, "error": f"No solution found for variable {find_token}.", "error_code": "NO_SOLUTION"}
     approx_vals = []
     for vstr in found_vals:
         try:

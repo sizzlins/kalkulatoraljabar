@@ -734,7 +734,7 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
             sols.append({str(k): str(v) for k, v in sol.items()})
         return {"ok": True, "type": "system", "solutions": sols}
     except Exception as e:
-        return {"ok": False, "error": f"Solver error: {e}"}
+        return {"ok": False, "error": f"Solver error: {e}", "error_code": "SOLVER_ERROR"}
 
 
 _WORKER_MANAGER = _WorkerManager()
