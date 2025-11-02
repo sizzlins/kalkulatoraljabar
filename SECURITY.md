@@ -2,6 +2,8 @@
 
 This document outlines security measures, limitations, and recommended deployment practices for Kalkulator.
 
+> **⚠️ Windows Users**: Resource limits (CPU/memory) do not apply on Windows due to OS limitations. See the [Windows Resource Limits](#windows-resource-limits) section below for deployment recommendations.
+
 ## Security Measures
 
 ### Input Validation
@@ -41,10 +43,45 @@ A sophisticated attacker could potentially find ways to execute code. For produc
 
 ### Windows Resource Limits
 
-On Windows, `resource` module is not available, so CPU/memory limits don't apply. For Windows deployment:
-- Use containerization (Docker)
-- Run worker processes under restricted user accounts
-- Monitor resource usage externally
+**Important**: The `resource` module is Unix-only and is not available on Windows. This means CPU and memory limits configured in `config.py` (e.g., `WORKER_CPU_SECONDS`, `WORKER_AS_MB`) will not be enforced on Windows systems.
+
+#### Windows Deployment Recommendations
+
+For production deployments on Windows with untrusted input, consider:
+
+1. **Containerization (Recommended)**:
+   - Use Docker with resource limits configured in `docker-compose.yml` or Kubernetes
+   - Example Docker resource limits:
+     ```yaml
+     deploy:
+       resources:
+         limits:
+           cpus: '0.5'
+           memory: 400M
+     ```
+
+2. **Process Isolation**:
+   - Run worker processes under restricted user accounts with minimal privileges
+   - Use Windows Job Objects API (requires additional implementation)
+   - Monitor resource usage externally using Windows Performance Monitor or similar tools
+
+3. **Alternative Sandboxing**:
+   - Consider using a virtual machine or Windows Sandbox
+   - Use AppContainers (Windows 10+)
+   - Implement Windows-specific resource monitoring and termination
+
+4. **Input Validation**:
+   - Rely more heavily on input validation and expression complexity limits
+   - Monitor logs for suspicious patterns indicating resource exhaustion attempts
+
+#### Implementation Status
+
+The codebase gracefully handles the absence of the `resource` module:
+- `HAS_RESOURCE` flag detects availability
+- Worker processes start successfully on Windows without resource limits
+- Error messages are clear when resource-related errors occur
+
+**Security Impact**: On Windows, malicious input could potentially consume unlimited CPU/memory in worker processes. For trusted environments (e.g., local development), this is acceptable. For untrusted input, use one of the mitigation strategies above.
 
 ## Recommended Deployment Posture
 

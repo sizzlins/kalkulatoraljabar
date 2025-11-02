@@ -94,6 +94,51 @@ python kalkulator.py --method numeric -e "equation"  # Force numeric solving
 python kalkulator.py --log-level DEBUG --log-file kalkulator.log -e "expression"
 ```
 
+### Python API
+
+```python
+from kalkulator_pkg.api import evaluate, solve_equation, solve_inequality, solve_system
+
+# Evaluate expressions
+result = evaluate("2 + 2")
+print(result.result)  # "4"
+
+result = evaluate("sin(pi/2)")
+print(result.result)  # "1"
+
+# Solve equations
+result = solve_equation("x + 1 = 0")
+print(result.exact)  # ["-1"]
+
+result = solve_equation("x^2 - 4 = 0")
+print(result.exact)  # ["-2", "2"]
+
+# Solve inequalities
+result = solve_inequality("x > 0")
+print(result.solutions)  # {"x": "x > 0"}
+
+# Solve systems
+result = solve_system("x+y=3, x-y=1")
+print(result.system_solutions)  # [{"x": "2", "y": "1"}]
+```
+
+**Error Handling:**
+
+All API functions return typed dataclasses with `ok` field:
+- `ok=True`: Operation succeeded
+- `ok=False`: Operation failed, check `error` field
+
+```python
+from kalkulator_pkg.api import evaluate
+
+result = evaluate("__import__('os')")
+if not result.ok:
+    print(f"Error: {result.error}")  # Error message
+    # Some results also include error_code for programmatic handling
+```
+
+For complete API documentation with examples, see `kalkulator_pkg/api.py` docstrings.
+
 ### REPL Mode
 
 ```bash
@@ -233,10 +278,13 @@ python -m pytest --cov=kalkulator_pkg tests/
 
 ### Deployment Recommendations
 
-1. **Resource Limits**: Ensure resource module is available on Unix systems
-2. **Windows Limitations**: Resource limits don't apply on Windows; consider containerization
+1. **Resource Limits (Unix)**: On Unix systems, resource limits are automatically applied via the `resource` module
+2. **Windows Limitations**: ⚠️ **Resource limits do not apply on Windows** (OS limitation). See `SECURITY.md` for mitigation strategies including:
+   - Docker containerization with resource limits
+   - Process isolation using restricted user accounts
+   - External resource monitoring
 3. **Input Validation**: The multi-layer validation provides defense-in-depth
-4. **Worker Isolation**: Workers run in separate processes with restricted resources
+4. **Worker Isolation**: Workers run in separate processes with restricted resources (Unix) or process isolation (Windows with mitigation)
 
 ### Known Limitations
 
@@ -250,5 +298,5 @@ Property of Muhammad Akhiel al Syahbana. Not to be freely distributed without au
 
 ## Version
 
-Current version: 2025-10-31
+Current version: 1.0.0 (see `pyproject.toml` for source of truth)
 

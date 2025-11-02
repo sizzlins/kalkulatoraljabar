@@ -34,6 +34,8 @@ ENV/
 .pytest_cache/
 .coverage
 htmlcov/
+.coverage_html/
+coverage.xml
 .tox/
 
 # Logs
@@ -79,4 +81,35 @@ New folder.zip
 
 # Qodana (optional, keep if you use it)
 .qodana/
+
+# Kalkulator cache (user-specific, should not be committed)
+.kalkulator_cache/
+cache_backup.json
+*.cache.json
+
+# IDE and editor files
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+.project
+.classpath
+.settings/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.bak
+*~
 
