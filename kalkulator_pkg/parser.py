@@ -303,7 +303,7 @@ def preprocess(input_str: str, skip_exponent_conversion: bool = False) -> str:
         raise ValidationError(
             f"Input too long (>{MAX_INPUT_LENGTH} characters)", "TOO_LONG"
         )
-    
+
     # Check for unterminated quotes (common syntax error)
     if input_str.count('"') % 2 != 0:
         raise ValidationError(
@@ -380,42 +380,61 @@ def preprocess(input_str: str, skip_exponent_conversion: bool = False) -> str:
     processed_str = AMBIG_FRACTION_REGEX.sub(r"((\1)/(\2))", processed_str)
     processed_str = DIGIT_LETTERS_REGEX.sub(r"\1*\2", processed_str)
     processed_str = re.sub(r"\s+", " ", processed_str).strip()
-    
+
     # Apply sub-expression caching: replace cached sub-expressions with their values
     # This speeds up expressions like "(2+2)/2" by using cached "2+2" -> "4"
     # Example: If "2+2" is cached as "4", then "(2+2)/2" becomes "4/2" before parsing
     try:
         from .cache_manager import get_cached_subexpr
-        
+
         # Strategy: Find parenthesized sub-expressions and check cache
         # Process from innermost to outermost to handle nested expressions
-        paren_pattern = re.compile(r'\(([^()]+)\)')
+        paren_pattern = re.compile(r"\(([^()]+)\)")
         max_iterations = 10  # Prevent infinite loops
         iteration = 0
-        
+
         while iteration < max_iterations:
             matches = list(paren_pattern.finditer(processed_str))
             if not matches:
                 break  # No more parentheses
-            
+
             changed = False
             # Process matches from right to left to avoid index shifting issues
             for match in reversed(matches):
-                subexpr = match.group(1)  # Content inside parentheses (without the parentheses)
+                subexpr = match.group(
+                    1
+                )  # Content inside parentheses (without the parentheses)
                 # Try to get cached value for this sub-expression
                 cached_value = get_cached_subexpr(subexpr)
                 if cached_value is not None and cached_value:
                     # Safety check: only replace if cached value is numeric
                     # Avoid replacing if cached value contains variables, operators, or parentheses
-                    unsafe_chars = ['x', 'y', 'z', 'X', 'Y', 'Z', 'a', 'b', 'c', '(', ')', '*', '/', '+', '-', '=']
+                    unsafe_chars = [
+                        "x",
+                        "y",
+                        "z",
+                        "X",
+                        "Y",
+                        "Z",
+                        "a",
+                        "b",
+                        "c",
+                        "(",
+                        ")",
+                        "*",
+                        "/",
+                        "+",
+                        "-",
+                        "=",
+                    ]
                     if not any(c in cached_value for c in unsafe_chars):
                         # Replace the parenthesized sub-expression with its cached value
-                        before = processed_str[:match.start()]
-                        after = processed_str[match.end():]
+                        before = processed_str[: match.start()]
+                        after = processed_str[match.end() :]
                         processed_str = before + cached_value + after
                         changed = True
                         break  # Restart scanning after replacement
-            
+
             if not changed:
                 break  # No more replacements possible
             iteration += 1

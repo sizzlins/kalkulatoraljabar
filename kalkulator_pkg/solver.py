@@ -102,18 +102,18 @@ def is_pell_equation_from_eq(eq: sp.Eq) -> bool:
         return False
     expanded_lhs = sp.expand(eq.lhs)
     x_sym, y_sym = syms[0], syms[1]
-    
+
     # Check: coefficient of x^2 must be 1
     coeff_x2 = expanded_lhs.coeff(x_sym**2)
     # Use equals() for SymPy comparison since == might not work for all cases
     if not sp.sympify(coeff_x2).equals(1):
         return False
-    
+
     # Check: coefficient of y^2 must be negative (non-zero)
     coeff_y2 = expanded_lhs.coeff(y_sym**2)
     if coeff_y2 == 0:
         return False
-    
+
     # For Pell equation x^2 - D*y^2 = 1, we need D = -coeff_y2 to be a positive integer
     D = -coeff_y2
     try:
@@ -126,13 +126,13 @@ def is_pell_equation_from_eq(eq: sp.Eq) -> bool:
             return False
     except (ValueError, TypeError):
         return False
-    
+
     # Check no other terms exist (no constant, no xy terms, etc.)
     # Subtract the x^2 and y^2 terms and check remainder is 0
     remainder = expanded_lhs - x_sym**2 - coeff_y2 * y_sym**2
     if sp.simplify(remainder) != 0:
         return False
-    
+
     return True
 
 
@@ -152,29 +152,38 @@ def fundamental_solution(D: int) -> Tuple[int, int]:
     sqrt_D = sp.sqrt(D)
     if sqrt_D.is_rational:
         raise ValueError("D must be non-square for Pell's equation")
-    
+
     # Use continued fraction to find the fundamental solution
     # For periodic CF [a0; [a1, a2, ..., an]], the fundamental solution
     # is found at the convergent before the end of the first period
     cf = sp.continued_fraction(sqrt_D)
     if not cf or len(cf) < 2:
         raise ValueError(f"Invalid continued fraction for D={D}")
-    
+
     # Extract a0 and the periodic part
     a0 = cf[0] if isinstance(cf[0], (int, sp.Integer)) else int(cf[0])
     period = []
     if len(cf) > 1:
         period_item = cf[1]
         if isinstance(period_item, list):
-            period = [int(x) if isinstance(x, (int, sp.Integer)) else int(sp.N(x)) for x in period_item]
+            period = [
+                int(x) if isinstance(x, (int, sp.Integer)) else int(sp.N(x))
+                for x in period_item
+            ]
         else:
-            period = [int(period_item) if isinstance(period_item, (int, sp.Integer)) else int(sp.N(period_item))]
-    
+            period = [
+                (
+                    int(period_item)
+                    if isinstance(period_item, (int, sp.Integer))
+                    else int(sp.N(period_item))
+                )
+            ]
+
     if not period:
         raise ValueError(f"Could not extract period for D={D}")
-    
+
     L = len(period)
-    
+
     # Compute convergents manually using recurrence
     # p[-2] = 0, p[-1] = 1
     # q[-2] = 1, q[-1] = 0
@@ -182,30 +191,30 @@ def fundamental_solution(D: int) -> Tuple[int, int]:
     # q[i] = a[i] * q[i-1] + q[i-2]
     p_minus2, p_minus1 = 0, 1
     q_minus2, q_minus1 = 1, 0
-    
+
     # First convergent: a0/1
     p_prev = a0 * p_minus1 + p_minus2
     q_prev = a0 * q_minus1 + q_minus2
-    
+
     # Check if a0/1 is a solution
     if p_prev * p_prev - D * q_prev * q_prev == 1:
         return int(p_prev), int(q_prev)
-    
+
     # Iterate through the period (need to go through one full period)
     max_iter = 2 * L
     for i in range(max_iter):
         a_i = period[i % L] if period else a0
         p_curr = a_i * p_prev + p_minus1
         q_curr = a_i * q_prev + q_minus1
-        
+
         # Check if this convergent is a solution
         if p_curr * p_curr - D * q_curr * q_curr == 1:
             return int(p_curr), int(q_curr)
-        
+
         # Update for next iteration
         p_minus1, p_prev = p_prev, p_curr
         q_minus1, q_prev = q_prev, q_curr
-    
+
     raise ValueError(f"Could not find fundamental solution for D={D}")
 
 
@@ -407,11 +416,19 @@ def _numeric_roots_for_single_var(
     )[:COARSE_GRID_MIN_SIZE]
     for guess in candidate_points:
         try:
-            root = sp.nsolve(expr, variable, guess, tol=ROOT_SEARCH_TOLERANCE, maxsteps=MAX_NSOLVE_STEPS)
+            root = sp.nsolve(
+                expr,
+                variable,
+                guess,
+                tol=ROOT_SEARCH_TOLERANCE,
+                maxsteps=MAX_NSOLVE_STEPS,
+            )
             if abs(sp.im(root)) > NUMERIC_TOLERANCE:
                 continue
             root_real = float(sp.re(root))
-            if not any(abs(existing - root_real) < ROOT_DEDUP_TOLERANCE for existing in roots):
+            if not any(
+                abs(existing - root_real) < ROOT_DEDUP_TOLERANCE for existing in roots
+            ):
                 roots.append(root_real)
         except (ValueError, TypeError, NotImplementedError):
             continue
@@ -446,7 +463,7 @@ def solve_single_equation(
             "error_code": "INVALID_FORMAT",
         }
     lhs_s, rhs_s = parts[0].strip(), parts[1].strip()
-    
+
     # Handle empty RHS: treat as evaluation of LHS
     if not rhs_s:
         # If RHS is empty, evaluate the LHS expression
@@ -464,13 +481,13 @@ def solve_single_equation(
                 "error": f"Failed to evaluate '{lhs_s}': {lhs_eval.get('error')}",
                 "error_code": lhs_eval.get("error_code", "EVAL_ERROR"),
             }
-    
+
     rhs_s = rhs_s or "0"
     lhs = evaluate_safely(lhs_s)
     if not lhs.get("ok"):
         error_msg = f"Failed to parse left-hand side '{lhs_s}': {lhs.get('error')}"
         error_code = lhs.get("error_code", "PARSE_ERROR")
-        
+
         # Provide helpful hints for common syntax errors
         if error_code == "UNBALANCED_PARENS":
             error_msg += ". Hint: Make sure your equation uses the format 'expression1 = expression2' (with spaces around =). For example, use 'x^x = log(25^x)/x' instead of '((x^x)=log(25^x))/(x)'."
@@ -483,7 +500,7 @@ def solve_single_equation(
             error_msg += ". Hint: The left-hand side appears to contain an assignment '='. If you're trying to solve an equation, use '==' for comparison, not '='. For example: 'x == 5' not 'x = 5'."
         else:
             error_msg += ". Please check your input syntax."
-        
+
         return {
             "ok": False,
             "error": error_msg,
@@ -493,7 +510,7 @@ def solve_single_equation(
     if not rhs.get("ok"):
         error_msg = f"Failed to parse right-hand side '{rhs_s}': {rhs.get('error')}"
         error_code = rhs.get("error_code", "PARSE_ERROR")
-        
+
         # Provide helpful hints for common syntax errors
         if error_code == "UNBALANCED_PARENS":
             error_msg += ". Hint: Make sure your equation uses the format 'expression1 = expression2' (with spaces around =). For example, use 'x^x = log(25^x)/x' instead of '((x^x)=log(25^x))/(x)'."
@@ -506,7 +523,7 @@ def solve_single_equation(
             error_msg += ". Hint: The right-hand side contains an equation '= 0'. If you're assigning a variable to an equation result, you cannot nest equations inside assignments. Try: 'a = expression' then solve 'expression = 0' separately."
         else:
             error_msg += ". Please check your input syntax."
-        
+
         return {
             "ok": False,
             "error": error_msg,
@@ -529,10 +546,18 @@ def solve_single_equation(
             return {"ok": True, "type": "pell", "solution": pell_str}
         except ValueError as e:
             logger.warning("Pell solver error: invalid equation", exc_info=True)
-            return {"ok": False, "error": f"Pell solver error: {e}", "error_code": "PELL_SOLVER_ERROR"}
+            return {
+                "ok": False,
+                "error": f"Pell solver error: {e}",
+                "error_code": "PELL_SOLVER_ERROR",
+            }
         except Exception as e:
             logger.error("Unexpected error in Pell solver", exc_info=True)
-            return {"ok": False, "error": f"Pell solver error: {e}", "error_code": "PELL_SOLVER_ERROR"}
+            return {
+                "ok": False,
+                "error": f"Pell solver error: {e}",
+                "error_code": "PELL_SOLVER_ERROR",
+            }
     symbols = list(equation.free_symbols)
     if not symbols:
         try:
@@ -576,7 +601,9 @@ def solve_single_equation(
             }
         except Exception as e:
             # Unexpected error - log it but still return reasonable result
-            logger.debug(f"Unexpected error in numeric identity check: {e}", exc_info=True)
+            logger.debug(
+                f"Unexpected error in numeric identity check: {e}", exc_info=True
+            )
             return {
                 "ok": True,
                 "type": "identity_or_contradiction",
@@ -588,7 +615,11 @@ def solve_single_equation(
         if find_var:
             sym = sp.symbols(find_var)
             if sym not in symbols:
-                return {"ok": False, "error": f"Variable '{find_var}' not present.", "error_code": "VARIABLE_NOT_FOUND"}
+                return {
+                    "ok": False,
+                    "error": f"Variable '{find_var}' not present.",
+                    "error_code": "VARIABLE_NOT_FOUND",
+                }
             sols = sp.solve(equation, sym)
             # Filter to only real solutions
             real_sols = []
@@ -603,12 +634,12 @@ def solve_single_equation(
                 except (ValueError, TypeError, OverflowError, ArithmeticError):
                     # Can't evaluate numerically - check if it's obviously complex
                     sol_str = str(solution)
-                    if 'I' not in sol_str:
+                    if "I" not in sol_str:
                         # Might be real but can't evaluate - include it
                         real_sols.append(solution)
                         real_approx.append(None)
                     # Otherwise skip complex solutions
-            
+
             if not real_sols:
                 # Check if equation is impossible (e.g., sin(x) = pi)
                 error_hint = None
@@ -636,7 +667,7 @@ def solve_single_equation(
                                 error_hint = f"cos({find_var}) cannot equal {lhs_val} (|cos({find_var})| <= 1)"
                     except (ValueError, TypeError, AttributeError):
                         pass
-                
+
                 if error_hint:
                     return {
                         "ok": False,
@@ -649,9 +680,14 @@ def solve_single_equation(
                         "error": "This equation has no real solutions (only complex solutions exist).",
                         "error_code": "NO_REAL_SOLUTIONS",
                     }
-            
+
             exacts = [str(s) for s in real_sols]
-            return {"ok": True, "type": "equation", "exact": exacts, "approx": real_approx}
+            return {
+                "ok": True,
+                "type": "equation",
+                "exact": exacts,
+                "approx": real_approx,
+            }
         if len(symbols) == 1:
             sym = symbols[0]
             # Check if equation contains trigonometric functions - use numeric fallback directly
@@ -689,36 +725,57 @@ def solve_single_equation(
                                     # Solution is complex - check if it's from an impossible trig equation
                                     s_str = str(s)
                                     # Check for asin/acos with argument > 1
-                                    if 'asin' in s_str.lower():
+                                    if "asin" in s_str.lower():
                                         import re
-                                        match = re.search(r'asin\(([^)]+)\)', s_str, re.IGNORECASE)
+
+                                        match = re.search(
+                                            r"asin\(([^)]+)\)", s_str, re.IGNORECASE
+                                        )
                                         if match:
                                             try:
                                                 inner_val = float(sp.N(match.group(1)))
                                                 if abs(inner_val) > 1:
                                                     # This is from an impossible equation (e.g., sin(x) = pi where pi > 1)
                                                     pass  # Will be handled below
-                                            except (ValueError, TypeError, AttributeError):
+                                            except (
+                                                ValueError,
+                                                TypeError,
+                                                AttributeError,
+                                            ):
                                                 pass
-                            except (ValueError, TypeError, OverflowError, ArithmeticError):
+                            except (
+                                ValueError,
+                                TypeError,
+                                OverflowError,
+                                ArithmeticError,
+                            ):
                                 # Can't evaluate - might be symbolic, skip for now
                                 pass
-                        
+
                         # If we found real solutions, return them
                         if real_sols:
                             exacts = [str(s) for s in real_sols]
-                            return {"ok": True, "type": "equation", "exact": exacts, "approx": real_approx}
-                        
+                            return {
+                                "ok": True,
+                                "type": "equation",
+                                "exact": exacts,
+                                "approx": real_approx,
+                            }
+
                         # No real solutions found - check if equation is impossible
                         # Check if sin(x) = k or cos(x) = k where |k| > 1
                         error_hint = None
                         if equation.has(sp.sin):
                             try:
-                                if equation.lhs.has(sp.sin) and not equation.rhs.has(sp.sin):
+                                if equation.lhs.has(sp.sin) and not equation.rhs.has(
+                                    sp.sin
+                                ):
                                     rhs_val = float(sp.N(equation.rhs))
                                     if abs(rhs_val) > 1:
                                         error_hint = f"sin(x) cannot equal {rhs_val} (|sin(x)| <= 1)"
-                                elif equation.rhs.has(sp.sin) and not equation.lhs.has(sp.sin):
+                                elif equation.rhs.has(sp.sin) and not equation.lhs.has(
+                                    sp.sin
+                                ):
                                     lhs_val = float(sp.N(equation.lhs))
                                     if abs(lhs_val) > 1:
                                         error_hint = f"sin(x) cannot equal {lhs_val} (|sin(x)| <= 1)"
@@ -726,17 +783,21 @@ def solve_single_equation(
                                 pass
                         if equation.has(sp.cos) and not error_hint:
                             try:
-                                if equation.lhs.has(sp.cos) and not equation.rhs.has(sp.cos):
+                                if equation.lhs.has(sp.cos) and not equation.rhs.has(
+                                    sp.cos
+                                ):
                                     rhs_val = float(sp.N(equation.rhs))
                                     if abs(rhs_val) > 1:
                                         error_hint = f"cos(x) cannot equal {rhs_val} (|cos(x)| <= 1)"
-                                elif equation.rhs.has(sp.cos) and not equation.lhs.has(sp.cos):
+                                elif equation.rhs.has(sp.cos) and not equation.lhs.has(
+                                    sp.cos
+                                ):
                                     lhs_val = float(sp.N(equation.lhs))
                                     if abs(lhs_val) > 1:
                                         error_hint = f"cos(x) cannot equal {lhs_val} (|cos(x)| <= 1)"
                             except (ValueError, TypeError, AttributeError):
                                 pass
-                        
+
                         if error_hint:
                             return {
                                 "ok": False,
@@ -755,11 +816,15 @@ def solve_single_equation(
                     if equation.has(sp.asin):
                         try:
                             # asin(x) = k: range of asin is [-pi/2, pi/2]
-                            if equation.lhs.has(sp.asin) and not equation.rhs.has(sp.asin):
+                            if equation.lhs.has(sp.asin) and not equation.rhs.has(
+                                sp.asin
+                            ):
                                 rhs_val = float(sp.N(equation.rhs))
                                 if abs(rhs_val) > sp.pi / 2:
                                     error_hint = f"asin(x) cannot equal {rhs_val} (range of asin is [-pi/2, pi/2])"
-                            elif equation.rhs.has(sp.asin) and not equation.lhs.has(sp.asin):
+                            elif equation.rhs.has(sp.asin) and not equation.lhs.has(
+                                sp.asin
+                            ):
                                 lhs_val = float(sp.N(equation.lhs))
                                 if abs(lhs_val) > sp.pi / 2:
                                     error_hint = f"asin(x) cannot equal {lhs_val} (range of asin is [-pi/2, pi/2])"
@@ -768,11 +833,15 @@ def solve_single_equation(
                     if equation.has(sp.acos) and not error_hint:
                         try:
                             # acos(x) = k: range of acos is [0, pi]
-                            if equation.lhs.has(sp.acos) and not equation.rhs.has(sp.acos):
+                            if equation.lhs.has(sp.acos) and not equation.rhs.has(
+                                sp.acos
+                            ):
                                 rhs_val = float(sp.N(equation.rhs))
                                 if rhs_val < 0 or rhs_val > sp.pi:
                                     error_hint = f"acos(x) cannot equal {rhs_val} (range of acos is [0, pi])"
-                            elif equation.rhs.has(sp.acos) and not equation.lhs.has(sp.acos):
+                            elif equation.rhs.has(sp.acos) and not equation.lhs.has(
+                                sp.acos
+                            ):
                                 lhs_val = float(sp.N(equation.lhs))
                                 if lhs_val < 0 or lhs_val > sp.pi:
                                     error_hint = f"acos(x) cannot equal {lhs_val} (range of acos is [0, pi])"
@@ -782,24 +851,28 @@ def solve_single_equation(
                         try:
                             # atan(x) = k: range of atan is (-pi/2, pi/2), but we'll be lenient
                             # atan can actually approach but never equal pi/2 or -pi/2
-                            if equation.lhs.has(sp.atan) and not equation.rhs.has(sp.atan):
+                            if equation.lhs.has(sp.atan) and not equation.rhs.has(
+                                sp.atan
+                            ):
                                 rhs_val = float(sp.N(equation.rhs))
                                 if abs(rhs_val) >= sp.pi / 2:
                                     error_hint = f"atan(x) cannot equal {rhs_val} (range of atan is (-pi/2, pi/2))"
-                            elif equation.rhs.has(sp.atan) and not equation.lhs.has(sp.atan):
+                            elif equation.rhs.has(sp.atan) and not equation.lhs.has(
+                                sp.atan
+                            ):
                                 lhs_val = float(sp.N(equation.lhs))
                                 if abs(lhs_val) >= sp.pi / 2:
                                     error_hint = f"atan(x) cannot equal {lhs_val} (range of atan is (-pi/2, pi/2))"
                         except (ValueError, TypeError, AttributeError):
                             pass
-                    
+
                     if error_hint:
                         return {
                             "ok": False,
                             "error": f"This equation has no real solutions: {error_hint}.",
                             "error_code": "NO_REAL_SOLUTIONS",
                         }
-                    
+
                     return {
                         "ok": False,
                         "error": "No real solutions found for this trigonometric equation.",
@@ -816,7 +889,11 @@ def solve_single_equation(
                             "error_code": "NO_REAL_SOLUTIONS",
                         }
                     # For other errors, return appropriate error message
-                    return {"ok": False, "error": f"Solving error: {solve_err}", "error_code": "SOLVER_ERROR"}
+                    return {
+                        "ok": False,
+                        "error": f"Solving error: {solve_err}",
+                        "error_code": "SOLVER_ERROR",
+                    }
             # Try specialized handlers first for polynomial equations
             try:
                 # Detect equation type and route to appropriate handler
@@ -862,7 +939,7 @@ def solve_single_equation(
                 # Fall through to general solve
                 poly = None
             # If Poly construction failed, try general solve
-            if 'poly' not in locals() or poly is None:
+            if "poly" not in locals() or poly is None:
                 # Check for trig functions first before attempting sp.solve()
                 if NUMERIC_FALLBACK_ENABLED and equation.has(sp.sin, sp.cos, sp.tan):
                     equation_expr = left_expr - right_expr
@@ -887,11 +964,15 @@ def solve_single_equation(
                         error_hint = None
                         if equation.has(sp.asin):
                             try:
-                                if equation.lhs.has(sp.asin) and not equation.rhs.has(sp.asin):
+                                if equation.lhs.has(sp.asin) and not equation.rhs.has(
+                                    sp.asin
+                                ):
                                     rhs_val = float(sp.N(equation.rhs))
                                     if abs(rhs_val) > sp.pi / 2:
                                         error_hint = f"asin(x) cannot equal {rhs_val} (range of asin is [-pi/2, pi/2])"
-                                elif equation.rhs.has(sp.asin) and not equation.lhs.has(sp.asin):
+                                elif equation.rhs.has(sp.asin) and not equation.lhs.has(
+                                    sp.asin
+                                ):
                                     lhs_val = float(sp.N(equation.lhs))
                                     if abs(lhs_val) > sp.pi / 2:
                                         error_hint = f"asin(x) cannot equal {lhs_val} (range of asin is [-pi/2, pi/2])"
@@ -899,11 +980,15 @@ def solve_single_equation(
                                 pass
                         if equation.has(sp.acos) and not error_hint:
                             try:
-                                if equation.lhs.has(sp.acos) and not equation.rhs.has(sp.acos):
+                                if equation.lhs.has(sp.acos) and not equation.rhs.has(
+                                    sp.acos
+                                ):
                                     rhs_val = float(sp.N(equation.rhs))
                                     if rhs_val < 0 or rhs_val > sp.pi:
                                         error_hint = f"acos(x) cannot equal {rhs_val} (range of acos is [0, pi])"
-                                elif equation.rhs.has(sp.acos) and not equation.lhs.has(sp.acos):
+                                elif equation.rhs.has(sp.acos) and not equation.lhs.has(
+                                    sp.acos
+                                ):
                                     lhs_val = float(sp.N(equation.lhs))
                                     if lhs_val < 0 or lhs_val > sp.pi:
                                         error_hint = f"acos(x) cannot equal {lhs_val} (range of acos is [0, pi])"
@@ -911,17 +996,21 @@ def solve_single_equation(
                                 pass
                         if equation.has(sp.atan) and not error_hint:
                             try:
-                                if equation.lhs.has(sp.atan) and not equation.rhs.has(sp.atan):
+                                if equation.lhs.has(sp.atan) and not equation.rhs.has(
+                                    sp.atan
+                                ):
                                     rhs_val = float(sp.N(equation.rhs))
                                     if abs(rhs_val) >= sp.pi / 2:
                                         error_hint = f"atan(x) cannot equal {rhs_val} (range of atan is (-pi/2, pi/2))"
-                                elif equation.rhs.has(sp.atan) and not equation.lhs.has(sp.atan):
+                                elif equation.rhs.has(sp.atan) and not equation.lhs.has(
+                                    sp.atan
+                                ):
                                     lhs_val = float(sp.N(equation.lhs))
                                     if abs(lhs_val) >= sp.pi / 2:
                                         error_hint = f"atan(x) cannot equal {lhs_val} (range of atan is (-pi/2, pi/2))"
                             except (ValueError, TypeError, AttributeError):
                                 pass
-                        
+
                         if error_hint:
                             return {
                                 "ok": False,
@@ -981,9 +1070,14 @@ def solve_single_equation(
                                 "approx": approx,
                             }
                     logger.warning(
-                        f"Error in symbolic solve, trying numeric fallback: {solve_error}", exc_info=True
+                        f"Error in symbolic solve, trying numeric fallback: {solve_error}",
+                        exc_info=True,
                     )
-                    return {"ok": False, "error": f"Solving error: {solve_error}", "error_code": "SOLVER_ERROR"}
+                    return {
+                        "ok": False,
+                        "error": f"Solving error: {solve_error}",
+                        "error_code": "SOLVER_ERROR",
+                    }
                 except Exception as solve_error:
                     # Catch other exceptions from sp.solve() (e.g., generator errors)
                     error_msg = str(solve_error).lower()
@@ -993,7 +1087,12 @@ def solve_single_equation(
                         if NUMERIC_FALLBACK_ENABLED:
                             equation_expr = left_expr - right_expr
                             numeric_roots = _numeric_roots_for_single_var(
-                                equation_expr, sym, interval=(-20, 20)  # Wider interval for exponential equations
+                                equation_expr,
+                                sym,
+                                interval=(
+                                    -20,
+                                    20,
+                                ),  # Wider interval for exponential equations
                             )
                             if numeric_roots:
                                 exacts = [str(r) for r in numeric_roots]
@@ -1025,7 +1124,11 @@ def solve_single_equation(
                                 "approx": approx,
                             }
                     logger.error("Unexpected error in symbolic solve", exc_info=True)
-                    return {"ok": False, "error": f"Unexpected solving error: {solve_error}", "error_code": "SOLVER_ERROR"}
+                    return {
+                        "ok": False,
+                        "error": f"Unexpected solving error: {solve_error}",
+                        "error_code": "SOLVER_ERROR",
+                    }
             # Check if sols is empty before processing
             if not sols:
                 return {
@@ -1090,15 +1193,19 @@ def solve_single_equation(
             "approx": multi_approx,
         }
     except Exception as e:
-        return {"ok": False, "error": f"Solving error: {e}", "error_code": "SOLVER_ERROR"}
+        return {
+            "ok": False,
+            "error": f"Solving error: {e}",
+            "error_code": "SOLVER_ERROR",
+        }
 
 
 def _parse_relational_fallback(rel_str: str) -> sp.Basic:
     """Parse a relational expression fallback method.
-    
+
     Args:
         rel_str: String containing relational operator
-        
+
     Returns:
         SymPy expression (if single expression) or tuple of parsed parts
         Raises ValueError if parsing fails
@@ -1156,10 +1263,18 @@ def solve_inequality(ineq_str: str, find_var: Optional[str] = None) -> Dict[str,
         return {"ok": False, "error": f"Parse error: {e}", "error_code": "PARSE_ERROR"}
     except (ValueError, TypeError) as e:
         logger.warning("Type error parsing inequality", exc_info=True)
-        return {"ok": False, "error": f"Invalid inequality: {e}", "error_code": "INVALID_INEQUALITY"}
+        return {
+            "ok": False,
+            "error": f"Invalid inequality: {e}",
+            "error_code": "INVALID_INEQUALITY",
+        }
     except Exception as e:
         logger.error("Unexpected error parsing inequality", exc_info=True)
-        return {"ok": False, "error": f"Failed to parse inequality: {e}", "error_code": "PARSE_ERROR"}
+        return {
+            "ok": False,
+            "error": f"Failed to parse inequality: {e}",
+            "error_code": "PARSE_ERROR",
+        }
     free_syms = list(parsed.free_symbols) if hasattr(parsed, "free_symbols") else []
     if find_var:
         target_sym = None
@@ -1183,8 +1298,14 @@ def solve_inequality(ineq_str: str, find_var: Optional[str] = None) -> Dict[str,
                     "solutions": {"result": str(is_true)},
                 }
             except (ValueError, TypeError, AttributeError) as e:
-                logger.warning(f"Error finding variables in inequality: {e}", exc_info=True)
-                return {"ok": False, "error": "No variable found in inequality", "error_code": "NO_VARIABLE"}
+                logger.warning(
+                    f"Error finding variables in inequality: {e}", exc_info=True
+                )
+                return {
+                    "ok": False,
+                    "error": "No variable found in inequality",
+                    "error_code": "NO_VARIABLE",
+                }
         vars_to_solve = free_syms
     results = {}
     for v in vars_to_solve:
@@ -1234,10 +1355,18 @@ def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
         rhs_s = rhs.strip()
         lhs_eval = evaluate_safely(lhs_s)
         if not lhs_eval.get("ok"):
-            return {"ok": False, "error": f"LHS parse error: {lhs_eval.get('error')}", "error_code": lhs_eval.get("error_code", "PARSE_ERROR")}
+            return {
+                "ok": False,
+                "error": f"LHS parse error: {lhs_eval.get('error')}",
+                "error_code": lhs_eval.get("error_code", "PARSE_ERROR"),
+            }
         rhs_eval = evaluate_safely(rhs_s)
         if not rhs_eval.get("ok"):
-            return {"ok": False, "error": f"RHS parse error: {rhs_eval.get('error')}", "error_code": rhs_eval.get("error_code", "PARSE_ERROR")}
+            return {
+                "ok": False,
+                "error": f"RHS parse error: {rhs_eval.get('error')}",
+                "error_code": rhs_eval.get("error_code", "PARSE_ERROR"),
+            }
         if VAR_NAME_RE.match(lhs_s):
             assignments[lhs_s] = {
                 "result": rhs_eval.get("result"),
@@ -1247,7 +1376,11 @@ def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
             {"lhs": lhs_eval.get("result"), "rhs": rhs_eval.get("result")}
         )
     if not eqs_serialized:
-        return {"ok": False, "error": "No equations parsed.", "error_code": "NO_EQUATIONS"}
+        return {
+            "ok": False,
+            "error": "No equations parsed.",
+            "error_code": "NO_EQUATIONS",
+        }
     if find_token and len(eqs_serialized) == 1:
         pair = eqs_serialized[0]
         lhs_s = pair.get("lhs")
@@ -1308,7 +1441,9 @@ def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
                         try:
                             subs_map[sp.symbols(var)] = sp.sympify(info.get("approx"))
                         except (ValueError, TypeError) as e:
-                            logger.debug(f"Error in inequality solving: {e}", exc_info=True)
+                            logger.debug(
+                                f"Error in inequality solving: {e}", exc_info=True
+                            )
                             try:
                                 subs_map[sp.symbols(var)] = parse_preprocessed(
                                     info.get("result")
@@ -1357,12 +1492,20 @@ def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
         stdout_text = _worker_solve_cached(json.dumps(payload))
     except (TimeoutError, ValueError, TypeError) as e:
         logger.warning(f"Error in worker-based solving: {e}", exc_info=True)
-        return {"ok": False, "error": "Solving timed out (worker).", "error_code": "TIMEOUT"}
+        return {
+            "ok": False,
+            "error": "Solving timed out (worker).",
+            "error_code": "TIMEOUT",
+        }
     try:
         data = json.loads(stdout_text)
     except (json.JSONDecodeError, ValueError, TypeError) as e:
         logger.warning(f"Invalid JSON from worker-solve: {e}", exc_info=True)
-        return {"ok": False, "error": f"Invalid worker-solve output: {e}.", "error_code": "INVALID_OUTPUT"}
+        return {
+            "ok": False,
+            "error": f"Invalid worker-solve output: {e}.",
+            "error_code": "INVALID_OUTPUT",
+        }
     if not data.get("ok"):
         return data
     sols_list = data.get("solutions", [])
@@ -1373,7 +1516,11 @@ def solve_system(raw_no_find: str, find_token: Optional[str]) -> Dict[str, Any]:
         if find_token in sol_dict:
             found_vals.append(sol_dict[find_token])
     if not found_vals:
-        return {"ok": False, "error": f"No solution found for variable {find_token}.", "error_code": "NO_SOLUTION"}
+        return {
+            "ok": False,
+            "error": f"No solution found for variable {find_token}.",
+            "error_code": "NO_SOLUTION",
+        }
     approx_vals = []
     for vstr in found_vals:
         try:

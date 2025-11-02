@@ -113,14 +113,20 @@ def _health_check() -> int:
     # Check Windows-specific limitations
     try:
         import sys
+
         if sys.platform == "win32":
             try:
                 import resource  # noqa: F401
+
                 print("[OK] Resource limits available (Unix-like behavior)")
                 checks_passed += 1
             except ImportError:
-                print("[WARN] Resource limits unavailable on Windows (expected limitation)")
-                print("[INFO] Consider containerization for production deployments on Windows")
+                print(
+                    "[WARN] Resource limits unavailable on Windows (expected limitation)"
+                )
+                print(
+                    "[INFO] Consider containerization for production deployments on Windows"
+                )
     except Exception:
         pass
 
@@ -134,6 +140,7 @@ def _health_check() -> int:
     print("\n[OK] All health checks passed!")
     try:
         import sys
+
         if sys.platform == "win32":
             try:
                 import resource  # noqa: F401
@@ -200,7 +207,9 @@ def print_result_pretty(res: Dict[str, Any], output_format: str = "human") -> No
             print(solution_str)
         except UnicodeEncodeError:
             # Fallback: replace Unicode with ASCII
-            safe_solution = solution_str.replace("\u221a", "sqrt").replace("\u00b2", "^2")
+            safe_solution = solution_str.replace("\u221a", "sqrt").replace(
+                "\u00b2", "^2"
+            )
             print("Pell parametric solution:")
             print(safe_solution)
     elif typ == "identity_or_contradiction":
@@ -283,12 +292,14 @@ def repl_loop(output_format: str = "human") -> None:
             # Stop worker processes gracefully
             try:
                 from .worker import _WORKER_MANAGER
+
                 _WORKER_MANAGER.stop()
             except Exception:
                 pass
             # Save persistent cache on shutdown
             try:
                 from .cache_manager import save_cache_to_disk
+
                 save_cache_to_disk()
             except ImportError:
                 pass
@@ -304,27 +315,31 @@ def repl_loop(output_format: str = "human") -> None:
         if raw.lower() in ("showcache", "show cache", "cache"):
             try:
                 from .cache_manager import get_persistent_cache
+
                 cache = get_persistent_cache()
                 eval_cache = cache.get("eval_cache", {})
                 subexpr_cache = cache.get("subexpr_cache", {})
-                
+
                 print(f"\n=== Cache Status ===")
                 print(f"Evaluation cache entries: {len(eval_cache)}")
                 print(f"Sub-expression cache entries: {len(subexpr_cache)}")
                 print(f"Total entries: {len(eval_cache) + len(subexpr_cache)}")
-                
+
                 if subexpr_cache:
                     print(f"\n=== Sub-expression Cache (showing first 20) ===")
                     for i, (expr, value) in enumerate(list(subexpr_cache.items())[:20]):
                         print(f"  {expr} → {value}")
                     if len(subexpr_cache) > 20:
                         print(f"  ... and {len(subexpr_cache) - 20} more entries")
-                
+
                 if eval_cache:
                     print(f"\n=== Evaluation Cache (showing first 10) ===")
-                    for i, (expr, result_json) in enumerate(list(eval_cache.items())[:10]):
+                    for i, (expr, result_json) in enumerate(
+                        list(eval_cache.items())[:10]
+                    ):
                         try:
                             import json
+
                             result_data = json.loads(result_json)
                             result_str = result_data.get("result", "N/A")
                             if len(result_str) > 50:
@@ -344,7 +359,7 @@ def repl_loop(output_format: str = "human") -> None:
                 from .cache_manager import export_cache_to_file, get_persistent_cache
                 import os
                 from pathlib import Path
-                
+
                 parts = raw.split(None, 1)
                 if len(parts) > 1:
                     file_path = parts[1].strip()
@@ -356,10 +371,12 @@ def repl_loop(output_format: str = "human") -> None:
                 else:
                     # Default to cache_backup.json in current directory
                     file_path = "cache_backup.json"
-                
+
                 cache = get_persistent_cache()
-                total_entries = len(cache.get("eval_cache", {})) + len(cache.get("subexpr_cache", {}))
-                
+                total_entries = len(cache.get("eval_cache", {})) + len(
+                    cache.get("subexpr_cache", {})
+                )
+
                 if export_cache_to_file(file_path):
                     print(f"Cache exported successfully to: {file_path}")
                     print(f"  ({total_entries} total entries saved)")
@@ -370,20 +387,26 @@ def repl_loop(output_format: str = "human") -> None:
             continue
         if raw.lower().startswith("loadcache"):
             try:
-                from .cache_manager import import_cache_from_file, replace_cache_from_file, get_persistent_cache
+                from .cache_manager import (
+                    import_cache_from_file,
+                    replace_cache_from_file,
+                    get_persistent_cache,
+                )
                 import os
-                
+
                 parts = raw.split()
                 replace_mode = False
                 file_path = None
-                
+
                 # Parse arguments: loadcache [replace] <file_path>
                 if len(parts) > 1:
                     if parts[1].lower() == "replace":
                         replace_mode = True
                         if len(parts) > 2:
                             file_path = parts[2].strip()
-                            if (file_path.startswith('"') and file_path.endswith('"')) or (
+                            if (
+                                file_path.startswith('"') and file_path.endswith('"')
+                            ) or (
                                 file_path.startswith("'") and file_path.endswith("'")
                             ):
                                 file_path = file_path[1:-1]
@@ -393,19 +416,21 @@ def repl_loop(output_format: str = "human") -> None:
                             file_path.startswith("'") and file_path.endswith("'")
                         ):
                             file_path = file_path[1:-1]
-                
+
                 if not file_path:
                     # Default to cache_backup.json in current directory
                     file_path = "cache_backup.json"
-                
+
                 if not os.path.exists(file_path):
                     print(f"Error: File not found: {file_path}")
                     continue
-                
+
                 if replace_mode:
                     if replace_cache_from_file(file_path):
                         cache = get_persistent_cache()
-                        total_entries = len(cache.get("eval_cache", {})) + len(cache.get("subexpr_cache", {}))
+                        total_entries = len(cache.get("eval_cache", {})) + len(
+                            cache.get("subexpr_cache", {})
+                        )
                         print(f"Cache replaced from: {file_path}")
                         print(f"  ({total_entries} total entries loaded)")
                     else:
@@ -413,7 +438,9 @@ def repl_loop(output_format: str = "human") -> None:
                 else:
                     if import_cache_from_file(file_path):
                         cache = get_persistent_cache()
-                        total_entries = len(cache.get("eval_cache", {})) + len(cache.get("subexpr_cache", {}))
+                        total_entries = len(cache.get("eval_cache", {})) + len(
+                            cache.get("subexpr_cache", {})
+                        )
                         print(f"Cache merged from: {file_path}")
                         print(f"  ({total_entries} total entries in cache after merge)")
                     else:
@@ -423,7 +450,9 @@ def repl_loop(output_format: str = "human") -> None:
             continue
         if raw.lower().startswith("timing"):
             parts = raw.lower().split()
-            if len(parts) == 1 or (len(parts) == 2 and parts[1] in ("on", "enable", "1")):
+            if len(parts) == 1 or (
+                len(parts) == 2 and parts[1] in ("on", "enable", "1")
+            ):
                 _timing_enabled = True
                 print("Timing enabled. Calculation time will be displayed.")
             elif len(parts) == 2 and parts[1] in ("off", "disable", "0"):
@@ -444,14 +473,17 @@ def repl_loop(output_format: str = "human") -> None:
                 expr = expr[1:-1]
             try:
                 import time
+
                 start_time = time.perf_counter()
                 # Check for unterminated quotes before processing
                 if expr.count('"') % 2 != 0 or expr.count("'") % 2 != 0:
-                    print("Error: Unmatched quotes detected. Check that all opening quotes have matching closing quotes.")
+                    print(
+                        "Error: Unmatched quotes detected. Check that all opening quotes have matching closing quotes."
+                    )
                     if _timing_enabled:
                         print(f"[Time: {time.perf_counter() - start_time:.4f}s]")
                     continue
-                
+
                 # Check for assignment with equation mixed (e.g., "a=(expr=0)")
                 if "," in expr:
                     parts = split_top_level_commas(expr)
@@ -460,12 +492,18 @@ def repl_loop(output_format: str = "human") -> None:
                             # Check if this looks like an assignment with nested equation
                             assign_parts = part.split("=", 1)
                             if len(assign_parts) == 2 and "=" in assign_parts[1]:
-                                print(f"Error: Cannot use assignment '=' inside another assignment. Found: '{part}'")
-                                print("Hint: Separate assignments and equations. Example: Use 'a = expression' then solve 'equation = 0' separately.")
+                                print(
+                                    f"Error: Cannot use assignment '=' inside another assignment. Found: '{part}'"
+                                )
+                                print(
+                                    "Hint: Separate assignments and equations. Example: Use 'a = expression' then solve 'equation = 0' separately."
+                                )
                                 if _timing_enabled:
-                                    print(f"[Time: {time.perf_counter() - start_time:.4f}s]")
+                                    print(
+                                        f"[Time: {time.perf_counter() - start_time:.4f}s]"
+                                    )
                                 continue
-                
+
                 if any(op in expr for op in ("<", ">", "<=", ">=")):
                     res = solve_inequality(expr, None)
                     elapsed = time.perf_counter() - start_time
@@ -492,12 +530,17 @@ def repl_loop(output_format: str = "human") -> None:
                     if not eva.get("ok"):
                         error_msg = eva.get("error", "Unknown error")
                         error_code = eva.get("error_code", "UNKNOWN_ERROR")
-                        
+
                         # Provide helpful hints based on error code
                         if error_code == "SYNTAX_ERROR":
-                            if "unterminated" in error_msg.lower() or "unmatched" in error_msg.lower():
+                            if (
+                                "unterminated" in error_msg.lower()
+                                or "unmatched" in error_msg.lower()
+                            ):
                                 print(f"Error: {error_msg}")
-                                print("Hint: Check that all quotes, parentheses, and brackets are properly matched.")
+                                print(
+                                    "Hint: Check that all quotes, parentheses, and brackets are properly matched."
+                                )
                             else:
                                 print(f"Error: {error_msg}")
                         elif error_code == "PARSE_ERROR":
@@ -505,7 +548,7 @@ def repl_loop(output_format: str = "human") -> None:
                             # Additional hints already included in error message from worker
                         else:
                             print(f"Error: {error_msg}")
-                        
+
                         if _timing_enabled:
                             print(f"[Time: {elapsed:.4f}s]")
                     else:
@@ -518,7 +561,13 @@ def repl_loop(output_format: str = "human") -> None:
                             expanded = sp.expand(parsed)
                             if str(expanded) != str(parsed):
                                 print(f"Expanded: {format_solution(expanded)}")
-                        except (ParseError, ValidationError, ValueError, TypeError, AttributeError):
+                        except (
+                            ParseError,
+                            ValidationError,
+                            ValueError,
+                            TypeError,
+                            AttributeError,
+                        ):
                             # Expected errors for some expressions - silently skip expansion
                             pass
                         if eva.get("approx"):
@@ -527,18 +576,26 @@ def repl_loop(output_format: str = "human") -> None:
                 # Log full error but show clean message to user
                 try:
                     from .logging_config import get_logger
+
                     logger = get_logger("cli")
                     logger.error(f"Error handling --eval in REPL: {e}", exc_info=True)
                 except ImportError:
                     pass
-                
+
                 # Show clean error message without traceback
                 error_str = str(e)
-                if "TokenError" in str(type(e).__name__) or "unterminated" in error_str.lower():
-                    print("Error: Syntax error detected. Check that all quotes and parentheses are properly matched.")
+                if (
+                    "TokenError" in str(type(e).__name__)
+                    or "unterminated" in error_str.lower()
+                ):
+                    print(
+                        "Error: Syntax error detected. Check that all quotes and parentheses are properly matched."
+                    )
                 elif "assign" in error_str.lower():
                     print(f"Error: {error_str}")
-                    print("Hint: Use '==' for equations and '=' for assignments. Don't mix them in a single expression.")
+                    print(
+                        "Hint: Use '==' for equations and '=' for assignments. Don't mix them in a single expression."
+                    )
                 else:
                     print(f"Error: {error_str}")
             continue
@@ -551,6 +608,7 @@ def repl_loop(output_format: str = "human") -> None:
             continue
         try:
             import time
+
             start_time = time.perf_counter()
             if any(op in raw for op in ("<", ">", "<=", ">=")):
                 res = solve_inequality(raw, None)
@@ -642,7 +700,13 @@ def repl_loop(output_format: str = "human") -> None:
                             expanded = sp.expand(parsed)
                             if str(expanded) != str(parsed):
                                 print(f"Expanded: {format_solution(expanded)}")
-                        except (ParseError, ValidationError, ValueError, TypeError, AttributeError):
+                        except (
+                            ParseError,
+                            ValidationError,
+                            ValueError,
+                            TypeError,
+                            AttributeError,
+                        ):
                             # Expected errors for some expressions - silently skip expansion
                             pass
                         if eva.get("approx"):
@@ -702,10 +766,11 @@ def main_entry(argv: Optional[List[str]] = None) -> int:
     # Load persistent cache on startup
     try:
         from .cache_manager import load_persistent_cache
+
         load_persistent_cache()  # Initialize cache
     except ImportError:
         pass  # Cache manager not available, continue without persistent cache
-    
+
     parser = argparse.ArgumentParser(prog="kalkulator")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--expr", type=str, help=argparse.SUPPRESS)
@@ -866,6 +931,7 @@ def main_entry(argv: Optional[List[str]] = None) -> int:
         # Save cache after evaluation (periodic save)
         try:
             from .cache_manager import save_cache_to_disk
+
             save_cache_to_disk()
         except ImportError:
             pass
@@ -881,12 +947,14 @@ def main_entry(argv: Optional[List[str]] = None) -> int:
         # Ensure worker processes are stopped on exit
         try:
             from .worker import _WORKER_MANAGER
+
             _WORKER_MANAGER.stop()
         except Exception:
             pass
         # Save persistent cache on exit
         try:
             from .cache_manager import save_cache_to_disk
+
             save_cache_to_disk()
         except ImportError:
             pass
@@ -896,4 +964,5 @@ def main_entry(argv: Optional[List[str]] = None) -> int:
 if __name__ == "__main__":
     """Allow running the CLI module directly with python -m kalkulator_pkg.cli"""
     import sys
+
     sys.exit(main_entry())

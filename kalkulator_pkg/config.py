@@ -27,6 +27,7 @@ from sympy.parsing.sympy_parser import (
 # Import here for backward compatibility
 try:
     import importlib.metadata
+
     VERSION = importlib.metadata.version("kalkulator")
 except Exception:
     # Fallback if package not installed
@@ -72,11 +73,21 @@ MAX_NSOLVE_GUESSES = int(
 )  # Optimized for balance between speed and thoroughness
 
 # Numeric tolerance constants (replacing magic numbers throughout codebase)
-NUMERIC_TOLERANCE = float(os.getenv("KALKULATOR_NUMERIC_TOLERANCE", "1e-8"))  # For imaginary part filtering
-ROOT_SEARCH_TOLERANCE = float(os.getenv("KALKULATOR_ROOT_SEARCH_TOLERANCE", "1e-12"))  # For root finding precision
-MAX_NSOLVE_STEPS = int(os.getenv("KALKULATOR_MAX_NSOLVE_STEPS", "80"))  # Maximum steps for nsolve
-COARSE_GRID_MIN_SIZE = int(os.getenv("KALKULATOR_COARSE_GRID_MIN_SIZE", "12"))  # Minimum grid size for root search
-ROOT_DEDUP_TOLERANCE = float(os.getenv("KALKULATOR_ROOT_DEDUP_TOLERANCE", "1e-6"))  # For deduplicating roots
+NUMERIC_TOLERANCE = float(
+    os.getenv("KALKULATOR_NUMERIC_TOLERANCE", "1e-8")
+)  # For imaginary part filtering
+ROOT_SEARCH_TOLERANCE = float(
+    os.getenv("KALKULATOR_ROOT_SEARCH_TOLERANCE", "1e-12")
+)  # For root finding precision
+MAX_NSOLVE_STEPS = int(
+    os.getenv("KALKULATOR_MAX_NSOLVE_STEPS", "80")
+)  # Maximum steps for nsolve
+COARSE_GRID_MIN_SIZE = int(
+    os.getenv("KALKULATOR_COARSE_GRID_MIN_SIZE", "12")
+)  # Minimum grid size for root search
+ROOT_DEDUP_TOLERANCE = float(
+    os.getenv("KALKULATOR_ROOT_DEDUP_TOLERANCE", "1e-6")
+)  # For deduplicating roots
 
 ALLOWED_SYMPY_NAMES = {
     "pi": sp.pi,

@@ -18,7 +18,9 @@ class TestErrorCodes(unittest.TestCase):
             self.fail("Should have raised ValidationError")
         except ValidationError as e:
             # Check error code is present
-            self.assertEqual(e.code, "FORBIDDEN_TOKEN", f"Expected FORBIDDEN_TOKEN, got {e.code}")
+            self.assertEqual(
+                e.code, "FORBIDDEN_TOKEN", f"Expected FORBIDDEN_TOKEN, got {e.code}"
+            )
             self.assertIn("forbidden", str(e).lower() or str(e.args).lower())
 
     def test_too_long_error_code(self):
@@ -41,7 +43,7 @@ class TestErrorCodes(unittest.TestCase):
         error_msg = result.get("error", "").lower()
         self.assertTrue(
             "invalid" in error_msg or "format" in error_msg,
-            f"Error message should mention invalid/format: {error_msg}"
+            f"Error message should mention invalid/format: {error_msg}",
         )
 
     def test_evaluation_error_code(self):
@@ -65,8 +67,10 @@ class TestErrorCodes(unittest.TestCase):
         # Error should indicate parsing issue
         error_lower = error.lower()
         self.assertTrue(
-            "parse" in error_lower or "syntax" in error_lower or "invalid" in error_lower,
-            f"Error should mention parse/syntax/invalid: {error}"
+            "parse" in error_lower
+            or "syntax" in error_lower
+            or "invalid" in error_lower,
+            f"Error should mention parse/syntax/invalid: {error}",
         )
 
     def test_contradiction_detection(self):
@@ -78,7 +82,7 @@ class TestErrorCodes(unittest.TestCase):
         result_str = result.get("result", "").lower()
         self.assertTrue(
             "contradiction" in result_str or "false" in result_str,
-            f"Result should indicate contradiction: {result_str}"
+            f"Result should indicate contradiction: {result_str}",
         )
 
     def test_identity_detection(self):
@@ -90,7 +94,7 @@ class TestErrorCodes(unittest.TestCase):
         result_str = result.get("result", "").lower()
         self.assertTrue(
             "identity" in result_str or "true" in result_str or "always" in result_str,
-            f"Result should indicate identity: {result_str}"
+            f"Result should indicate identity: {result_str}",
         )
 
     def test_worker_timeout_error(self):
@@ -102,4 +106,3 @@ class TestErrorCodes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -61,7 +61,7 @@ class TestPellEquation(unittest.TestCase):
     def test_pell_detection(self):
         # Create symbols once to ensure they're the same instance
         x, y = sp.symbols("x y")
-        eq = sp.Eq(x ** 2 - 2 * y ** 2, 1)
+        eq = sp.Eq(x**2 - 2 * y**2, 1)
         self.assertTrue(is_pell_equation_from_eq(eq))
 
 

@@ -26,4 +26,6 @@ profile:
 #  - id: <plugin.id> #(plugin id can be found at https://plugins.jetbrains.com)
 
 #Specify Qodana linter for analysis (Applied in CI/CD pipeline)
-linter: jetbrains/qodana-<linter>:2024.3
+# For Python projects, use: python, python-community, or python-pro
+# Using python-community for Python code analysis
+linter: jetbrains/qodana-python-community:2024.3

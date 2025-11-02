@@ -48,6 +48,7 @@ except ImportError:
 HAS_RESOURCE = False
 try:
     import resource  # noqa: F401 - check if available
+
     HAS_RESOURCE = True
 except (ImportError, OSError):
     HAS_RESOURCE = False
@@ -77,6 +78,7 @@ def _limit_resources() -> None:
         return
     try:
         import resource as _resource
+
         _resource.setrlimit(
             _resource.RLIMIT_CPU, (WORKER_CPU_SECONDS, WORKER_CPU_SECONDS + 1)
         )
@@ -109,25 +111,33 @@ def worker_evaluate(preprocessed_expr: str) -> Dict[str, Any]:
         # Provide helpful hints for common errors
         if "cannot assign" in error_msg.lower() or "==" in error_msg.lower():
             error_msg += " Hint: If you're writing an equation, use '==' instead of '='. For assignments in REPL, use separate statements like 'a = expression' followed by 'equation = 0'."
-        return {"ok": False, "error": f"Parse error: {error_msg}", "error_code": "PARSE_ERROR"}
+        return {
+            "ok": False,
+            "error": f"Parse error: {error_msg}",
+            "error_code": "PARSE_ERROR",
+        }
     except Exception as e:
         # Check for specific error types that need better messages
         error_type = type(e).__name__
         error_msg = str(e)
-        
+
         # Handle TokenError (unterminated string literal, etc.)
         # TokenError comes from tokenize module when parsing Python-like syntax
         # Check if it's a tokenize.TokenError
         is_token_error = False
         try:
             import tokenize
+
             is_token_error = isinstance(e, tokenize.TokenError)
         except (ImportError, AttributeError):
             # Fallback: check by name
             is_token_error = error_type == "TokenError"
-        
+
         if is_token_error:
-            if "unterminated string literal" in error_msg.lower() or "unterminated" in error_msg.lower():
+            if (
+                "unterminated string literal" in error_msg.lower()
+                or "unterminated" in error_msg.lower()
+            ):
                 return {
                     "ok": False,
                     "error": "Syntax error: Unmatched or unterminated string literal. Check that all quotes are properly closed and matched.",
@@ -138,10 +148,10 @@ def worker_evaluate(preprocessed_expr: str) -> Dict[str, Any]:
                 "error": f"Syntax error: {error_msg}",
                 "error_code": "SYNTAX_ERROR",
             }
-        
+
         # Log full traceback for unexpected errors but return clean message
         logger.exception("Unexpected parse error in worker")
-        
+
         # Try to extract useful information from the error
         if "assign" in error_msg.lower() and "==" in error_msg.lower():
             return {
@@ -149,7 +159,7 @@ def worker_evaluate(preprocessed_expr: str) -> Dict[str, Any]:
                 "error": f"Parse error: {error_msg}. Hint: Use '==' for equations, '=' for assignments. Mixed assignments and equations must be separated (e.g., 'a = expression' on one line, then solve the equation separately).",
                 "error_code": "PARSE_ERROR",
             }
-        
+
         return {
             "ok": False,
             "error": f"Parse error: {error_msg}. Please check your syntax.",
@@ -300,13 +310,17 @@ class _WorkerManager:
                     # Process already dead or invalid - log but continue cleanup
                     try:
                         from .logging_config import safe_log
-                        safe_log("worker", "warning", f"Error joining worker process: {e}")
+
+                        safe_log(
+                            "worker", "warning", f"Error joining worker process: {e}"
+                        )
                     except ImportError:
                         pass
         except (AttributeError, TypeError) as e:
             # Invalid state - log but continue cleanup
             try:
                 from .logging_config import safe_log
+
                 safe_log("worker", "warning", f"Error stopping workers: {e}")
             except ImportError:
                 pass
@@ -410,7 +424,13 @@ class _WorkerManager:
                 del self._cancel_flags[req_id]
             try:
                 from .logging_config import safe_log
-                safe_log("worker", "warning", f"Worker communication error, restarting: {e}", exc_info=True)
+
+                safe_log(
+                    "worker",
+                    "warning",
+                    f"Worker communication error, restarting: {e}",
+                    exc_info=True,
+                )
             except ImportError:
                 pass
             try:
@@ -458,7 +478,13 @@ class _WorkerManager:
                 # Worker restart failed - stop and return error
                 try:
                     from .logging_config import safe_log
-                    safe_log("worker", "error", f"Failed to restart workers: {e}", exc_info=True)
+
+                    safe_log(
+                        "worker",
+                        "error",
+                        f"Failed to restart workers: {e}",
+                        exc_info=True,
+                    )
                 except ImportError:
                     pass
                 self.stop()
@@ -559,9 +585,15 @@ def _worker_daemon_main(
             error_msg = str(e)
             # On Windows, resource module errors are expected - provide clearer message
             if "resource" in error_msg.lower() and "no module" in error_msg.lower():
-                error_msg = "Resource limits unavailable on Windows (expected limitation)"
+                error_msg = (
+                    "Resource limits unavailable on Windows (expected limitation)"
+                )
             res_q.put(
-                {"ok": False, "error": f"Worker daemon error: {error_msg}", "id": msg.get("id")}
+                {
+                    "ok": False,
+                    "error": f"Worker daemon error: {error_msg}",
+                    "id": msg.get("id"),
+                }
             )
 
 
@@ -589,7 +621,13 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
                 # Resource limits failed - log but continue
                 try:
                     from .logging_config import safe_log
-                    safe_log("worker", "warning", "Failed to apply resource limits", exc_info=True)
+
+                    safe_log(
+                        "worker",
+                        "warning",
+                        "Failed to apply resource limits",
+                        exc_info=True,
+                    )
                 except ImportError:
                     pass
         solutions = sp.solve(eq_objs, dict=True)
@@ -608,11 +646,15 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
                             if eq.lhs.has(sp.sin) and not eq.rhs.has(sp.sin):
                                 rhs_val = float(sp.N(eq.rhs))
                                 if abs(rhs_val) > 1:
-                                    error_hints.append(f"Equation '{eq}' has no real solutions: sin(x) cannot equal {rhs_val} (|sin(x)| <= 1)")
+                                    error_hints.append(
+                                        f"Equation '{eq}' has no real solutions: sin(x) cannot equal {rhs_val} (|sin(x)| <= 1)"
+                                    )
                             elif eq.rhs.has(sp.sin) and not eq.lhs.has(sp.sin):
                                 lhs_val = float(sp.N(eq.lhs))
                                 if abs(lhs_val) > 1:
-                                    error_hints.append(f"Equation '{eq}' has no real solutions: sin(x) cannot equal {lhs_val} (|sin(x)| <= 1)")
+                                    error_hints.append(
+                                        f"Equation '{eq}' has no real solutions: sin(x) cannot equal {lhs_val} (|sin(x)| <= 1)"
+                                    )
                         except (ValueError, TypeError, AttributeError):
                             pass
                     if eq.has(sp.cos):
@@ -620,17 +662,23 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
                             if eq.lhs.has(sp.cos) and not eq.rhs.has(sp.cos):
                                 rhs_val = float(sp.N(eq.rhs))
                                 if abs(rhs_val) > 1:
-                                    error_hints.append(f"Equation '{eq}' has no real solutions: cos(x) cannot equal {rhs_val} (|cos(x)| <= 1)")
+                                    error_hints.append(
+                                        f"Equation '{eq}' has no real solutions: cos(x) cannot equal {rhs_val} (|cos(x)| <= 1)"
+                                    )
                             elif eq.rhs.has(sp.cos) and not eq.lhs.has(sp.cos):
                                 lhs_val = float(sp.N(eq.lhs))
                                 if abs(lhs_val) > 1:
-                                    error_hints.append(f"Equation '{eq}' has no real solutions: cos(x) cannot equal {lhs_val} (|cos(x)| <= 1)")
+                                    error_hints.append(
+                                        f"Equation '{eq}' has no real solutions: cos(x) cannot equal {lhs_val} (|cos(x)| <= 1)"
+                                    )
                         except (ValueError, TypeError, AttributeError):
                             pass
-            
+
             error_msg = "No solution found for this system of equations."
             if error_hints:
-                error_msg += " Possible reasons:\n" + "\n".join(f"  - {hint}" for hint in error_hints)
+                error_msg += " Possible reasons:\n" + "\n".join(
+                    f"  - {hint}" for hint in error_hints
+                )
             else:
                 error_msg += " The system may be inconsistent, overdetermined, or have no real solutions. Check for contradictory equations."
             return {
@@ -641,7 +689,7 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
         # Filter solutions to only include real ones
         # Import tolerance constant
         from .config import NUMERIC_TOLERANCE
-        
+
         real_sols = []
         complex_sols = []
         for sol in solutions:
@@ -657,13 +705,20 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
                     # If we can't evaluate, assume it might be complex
                     # Check if it's obviously complex (contains I or complex operations)
                     val_str = str(val)
-                    if 'I' in val_str or 'asin(' in val_str.lower() or 'acos(' in val_str.lower():
+                    if (
+                        "I" in val_str
+                        or "asin(" in val_str.lower()
+                        or "acos(" in val_str.lower()
+                    ):
                         # Check if asin/acos would produce complex (e.g., asin(pi) is complex)
-                        if 'asin' in val_str.lower():
+                        if "asin" in val_str.lower():
                             try:
                                 # Try to extract what's inside asin
                                 import re
-                                match = re.search(r'asin\(([^)]+)\)', val_str, re.IGNORECASE)
+
+                                match = re.search(
+                                    r"asin\(([^)]+)\)", val_str, re.IGNORECASE
+                                )
                                 if match:
                                     inner = match.group(1)
                                     inner_val = float(sp.N(inner))
@@ -672,9 +727,11 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
                                         break
                             except (ValueError, TypeError, AttributeError):
                                 pass
-                        if 'acos' in val_str.lower():
+                        if "acos" in val_str.lower():
                             try:
-                                match = re.search(r'acos\(([^)]+)\)', val_str, re.IGNORECASE)
+                                match = re.search(
+                                    r"acos\(([^)]+)\)", val_str, re.IGNORECASE
+                                )
                                 if match:
                                     inner = match.group(1)
                                     inner_val = float(sp.N(inner))
@@ -687,7 +744,7 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
                 real_sols.append(sol)
             else:
                 complex_sols.append(sol)
-        
+
         # If we have only complex solutions, provide helpful error
         if not real_sols and complex_sols:
             error_hints = []
@@ -698,11 +755,15 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
                             if eq.lhs.has(sp.sin) and not eq.rhs.has(sp.sin):
                                 rhs_val = float(sp.N(eq.rhs))
                                 if abs(rhs_val) > 1:
-                                    error_hints.append(f"Equation '{eq}' has no real solutions: sin(x) cannot equal {rhs_val} (|sin(x)| <= 1)")
+                                    error_hints.append(
+                                        f"Equation '{eq}' has no real solutions: sin(x) cannot equal {rhs_val} (|sin(x)| <= 1)"
+                                    )
                             elif eq.rhs.has(sp.sin) and not eq.lhs.has(sp.sin):
                                 lhs_val = float(sp.N(eq.lhs))
                                 if abs(lhs_val) > 1:
-                                    error_hints.append(f"Equation '{eq}' has no real solutions: sin(x) cannot equal {lhs_val} (|sin(x)| <= 1)")
+                                    error_hints.append(
+                                        f"Equation '{eq}' has no real solutions: sin(x) cannot equal {lhs_val} (|sin(x)| <= 1)"
+                                    )
                         except (ValueError, TypeError, AttributeError):
                             pass
                     if eq.has(sp.cos):
@@ -710,31 +771,43 @@ def _worker_solve_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
                             if eq.lhs.has(sp.cos) and not eq.rhs.has(sp.cos):
                                 rhs_val = float(sp.N(eq.rhs))
                                 if abs(rhs_val) > 1:
-                                    error_hints.append(f"Equation '{eq}' has no real solutions: cos(x) cannot equal {rhs_val} (|cos(x)| <= 1)")
+                                    error_hints.append(
+                                        f"Equation '{eq}' has no real solutions: cos(x) cannot equal {rhs_val} (|cos(x)| <= 1)"
+                                    )
                             elif eq.rhs.has(sp.cos) and not eq.lhs.has(sp.cos):
                                 lhs_val = float(sp.N(eq.lhs))
                                 if abs(lhs_val) > 1:
-                                    error_hints.append(f"Equation '{eq}' has no real solutions: cos(x) cannot equal {lhs_val} (|cos(x)| <= 1)")
+                                    error_hints.append(
+                                        f"Equation '{eq}' has no real solutions: cos(x) cannot equal {lhs_val} (|cos(x)| <= 1)"
+                                    )
                         except (ValueError, TypeError, AttributeError):
                             pass
             error_msg = "No real solutions found for this system of equations (only complex solutions exist)."
             if error_hints:
-                error_msg += " Reasons:\n" + "\n".join(f"  - {hint}" for hint in error_hints)
+                error_msg += " Reasons:\n" + "\n".join(
+                    f"  - {hint}" for hint in error_hints
+                )
             else:
-                error_msg += " The system may have complex solutions but no real solutions."
+                error_msg += (
+                    " The system may have complex solutions but no real solutions."
+                )
             return {
                 "ok": False,
                 "error": error_msg,
                 "error_code": "NO_REAL_SOLUTIONS",
             }
-        
+
         # Return only real solutions
         sols = []
         for sol in real_sols:
             sols.append({str(k): str(v) for k, v in sol.items()})
         return {"ok": True, "type": "system", "solutions": sols}
     except Exception as e:
-        return {"ok": False, "error": f"Solver error: {e}", "error_code": "SOLVER_ERROR"}
+        return {
+            "ok": False,
+            "error": f"Solver error: {e}",
+            "error_code": "SOLVER_ERROR",
+        }
 
 
 _WORKER_MANAGER = _WorkerManager()
@@ -744,7 +817,12 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
     """Evaluate expression with persistent cache support."""
     # Check persistent cache first
     try:
-        from .cache_manager import get_cached_eval, update_eval_cache, update_subexpr_cache
+        from .cache_manager import (
+            get_cached_eval,
+            update_eval_cache,
+            update_subexpr_cache,
+        )
+
         cached_result = get_cached_eval(preprocessed_expr)
         if cached_result is not None:
             if logger:
@@ -752,7 +830,7 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
             return cached_result
     except ImportError:
         pass
-    
+
     # Not in persistent cache, evaluate normally
     resp = _WORKER_MANAGER.request(
         {"type": "eval", "preprocessed": preprocessed_expr}, timeout=WORKER_TIMEOUT
@@ -762,13 +840,17 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
         # Save to persistent cache if evaluation was successful
         try:
             from .cache_manager import update_eval_cache, update_subexpr_cache
+
             if resp.get("ok"):
                 update_eval_cache(preprocessed_expr, result_json)
                 # Also cache as sub-expression if it's a simple numeric result
                 result_value = resp.get("result", "")
                 approx_value = resp.get("approx", "")
                 # Only cache pure numeric expressions (no variables)
-                if result_value and not any(c in result_value for c in ['x', 'y', 'z', 'X', 'Y', 'Z', 'a', 'b', 'c']):
+                if result_value and not any(
+                    c in result_value
+                    for c in ["x", "y", "z", "X", "Y", "Z", "a", "b", "c"]
+                ):
                     # Cache the sub-expression mapping
                     cache_value = approx_value if approx_value else result_value
                     if cache_value:
@@ -790,6 +872,7 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
         # Try to save to persistent cache
         try:
             from .cache_manager import update_eval_cache, update_subexpr_cache
+
             try:
                 result_data = json.loads(result_text)
                 if result_data.get("ok"):
@@ -797,7 +880,10 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
                     result_value = result_data.get("result", "")
                     approx_value = result_data.get("approx", "")
                     # Only cache pure numeric expressions
-                    if result_value and not any(c in result_value for c in ['x', 'y', 'z', 'X', 'Y', 'Z', 'a', 'b', 'c']):
+                    if result_value and not any(
+                        c in result_value
+                        for c in ["x", "y", "z", "X", "Y", "Z", "a", "b", "c"]
+                    ):
                         cache_value = approx_value if approx_value else result_value
                         if cache_value:
                             update_subexpr_cache(preprocessed_expr, cache_value)
@@ -824,6 +910,7 @@ def _worker_solve_cached(payload_json: str) -> str:
         # Invalid JSON - log and use empty equations
         try:
             from .logging_config import safe_log
+
             safe_log("worker", "warning", f"Invalid JSON payload in solve cache: {e}")
         except ImportError:
             pass
@@ -872,7 +959,10 @@ def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> Dict[str, Any]:
         # Unexpected error in preprocessing - log it
         try:
             from .logging_config import safe_log
-            safe_log("worker", "error", f"Unexpected preprocessing error: {e}", exc_info=True)
+
+            safe_log(
+                "worker", "error", f"Unexpected preprocessing error: {e}", exc_info=True
+            )
         except ImportError:
             pass
         return {"ok": False, "error": "Preprocess error", "error_code": "UNKNOWN_ERROR"}
@@ -884,7 +974,10 @@ def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> Dict[str, Any]:
         # Specific exceptions for worker communication failures
         try:
             from .logging_config import safe_log
-            safe_log("worker", "error", f"Worker communication error: {e}", exc_info=True)
+
+            safe_log(
+                "worker", "error", f"Worker communication error: {e}", exc_info=True
+            )
         except ImportError:
             pass
         return {
@@ -922,11 +1015,13 @@ def clear_caches() -> None:
             pass  # Function may not be decorated with lru_cache anymore
         _worker_solve_cached.cache_clear()
         from .parser import parse_preprocessed as _pp
+
         _pp.cache_clear()
-        
+
         # Clear persistent cache
         try:
             from .cache_manager import clear_persistent_cache
+
             clear_persistent_cache()
         except ImportError:
             pass

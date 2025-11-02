@@ -15,7 +15,9 @@ class TestWindowsResourceLimits(unittest.TestCase):
         """Test that resource module availability is correctly detected."""
         if sys.platform == "win32":
             # On Windows, resource module should not be available
-            self.assertFalse(HAS_RESOURCE, "Resource module should not be available on Windows")
+            self.assertFalse(
+                HAS_RESOURCE, "Resource module should not be available on Windows"
+            )
         else:
             # On Unix, resource module should be available
             self.assertTrue(HAS_RESOURCE, "Resource module should be available on Unix")
@@ -28,7 +30,9 @@ class TestWindowsResourceLimits(unittest.TestCase):
                 _limit_resources()
                 # Should succeed without raising
             except Exception as e:
-                self.fail(f"_limit_resources should handle Windows gracefully, but raised: {e}")
+                self.fail(
+                    f"_limit_resources should handle Windows gracefully, but raised: {e}"
+                )
 
     def test_health_check_windows_warning(self):
         """Test that health check includes Windows resource limit warning."""
@@ -36,29 +40,29 @@ class TestWindowsResourceLimits(unittest.TestCase):
             # Run health check and capture output
             import io
             from contextlib import redirect_stdout
-            
+
             output = io.StringIO()
             with redirect_stdout(output):
                 exit_code = _health_check()
-            
+
             output_str = output.getvalue()
             # Should mention Windows or resource limits or DEPLOYMENT
             output_lower = output_str.lower()
             has_warning = (
-                "windows" in output_lower or 
-                "resource" in output_lower or 
-                "deployment" in output_lower or
-                "containerization" in output_lower
+                "windows" in output_lower
+                or "resource" in output_lower
+                or "deployment" in output_lower
+                or "containerization" in output_lower
             )
             self.assertTrue(
                 has_warning,
-                f"Health check should mention Windows limitations. Output: {output_str}"
+                f"Health check should mention Windows limitations. Output: {output_str}",
             )
 
     def test_worker_evaluation_on_windows(self):
         """Test that worker evaluation works on Windows without resource limits."""
         from kalkulator_pkg.worker import evaluate_safely
-        
+
         # Should work even without resource module
         result = evaluate_safely("2 + 2")
         self.assertTrue(result.get("ok"), "Evaluation should work on Windows")
@@ -73,14 +77,14 @@ class TestWindowsCompatibility(unittest.TestCase):
         from kalkulator_pkg.cli import print_result_pretty
         import io
         from contextlib import redirect_stdout
-        
+
         # Test with Unicode characters that might cause encoding issues
         result = {
             "ok": True,
             "type": "pell",
-            "solution": "x = (3 + 2√5)^n + (3 - 2√5)^n / 2"  # Contains Unicode √
+            "solution": "x = (3 + 2√5)^n + (3 - 2√5)^n / 2",  # Contains Unicode √
         }
-        
+
         output = io.StringIO()
         try:
             with redirect_stdout(output):
@@ -94,4 +98,3 @@ class TestWindowsCompatibility(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

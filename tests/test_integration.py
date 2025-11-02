@@ -50,7 +50,9 @@ class TestPreprocessingIntegration(unittest.TestCase):
         result = preprocess("2² + 50% * √(4)")
         self.assertIn("**", result)
         # Percentage conversion may use /100 or (50)/(100) format
-        self.assertTrue("/100" in result or "(50)/(100)" in result or "(50/100)" in result)
+        self.assertTrue(
+            "/100" in result or "(50)/(100)" in result or "(50/100)" in result
+        )
         self.assertIn("sqrt", result)
 
 

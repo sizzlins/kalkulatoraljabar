@@ -58,7 +58,9 @@ def get_logger(name: str = "kalkulator") -> logging.Logger:
     return logging.getLogger(f"kalkulator.{name}")
 
 
-def safe_log(module_name: str, level: str, message: str, *args, exc_info: bool = False, **kwargs) -> None:
+def safe_log(
+    module_name: str, level: str, message: str, *args, exc_info: bool = False, **kwargs
+) -> None:
     """Safely log a message, handling ImportError if logging is unavailable.
 
     This utility function eliminates the need for try/except ImportError blocks
