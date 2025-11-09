@@ -21,7 +21,6 @@ For PyInstaller:
 from __future__ import annotations
 
 import sys
-from typing import Optional, List
 
 # Allow frozen executables (PyInstaller) on Windows to spawn child processes.
 try:
@@ -43,16 +42,11 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for errors).
     """
-    # Call freeze_support early for PyInstaller compatibility
-    try:
-        freeze_support()
-    except Exception:
-        # If freeze_support fails, continue anyway
-        pass
 
     # Load persistent cache on startup
     try:
         from kalkulator_pkg.cache_manager import load_persistent_cache
+
         load_persistent_cache()  # Initialize cache
     except ImportError:
         pass  # Cache manager not available, continue without persistent cache
@@ -60,10 +54,12 @@ def main() -> int:
     # Delegate to the modular CLI entrypoint
     try:
         from kalkulator_pkg.cli import main_entry
+
         exit_code = main_entry(sys.argv[1:])
         # Save persistent cache on normal exit
         try:
             from kalkulator_pkg.cache_manager import save_cache_to_disk
+
             save_cache_to_disk()
         except ImportError:
             pass
@@ -72,12 +68,14 @@ def main() -> int:
         # Stop worker processes before exiting
         try:
             from kalkulator_pkg.worker import _WORKER_MANAGER
+
             _WORKER_MANAGER.stop()
         except Exception:
             pass
         # Save cache on interrupt
         try:
             from kalkulator_pkg.cache_manager import save_cache_to_disk
+
             save_cache_to_disk()
         except ImportError:
             pass
@@ -85,12 +83,20 @@ def main() -> int:
         return 1
     except ImportError as e:
         print(f"Error: Failed to import kalkulator_pkg: {e}")
-        print("Please ensure all dependencies are installed: pip install -r requirements.txt")
+        print(
+            "Please ensure all dependencies are installed: pip install -r requirements.txt"
+        )
         return 1
     except Exception as e:
         print(f"Fatal error: {e}")
         return 1
 
 
+# Call freeze_support early for PyInstaller compatibility (must be at module level)
 if __name__ == "__main__":
+    try:
+        freeze_support()
+    except Exception:
+        # If freeze_support fails, continue anyway
+        pass
     sys.exit(main())

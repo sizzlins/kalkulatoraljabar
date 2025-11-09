@@ -135,6 +135,10 @@ def save_persistent_cache(cache_data: dict[str, Any]) -> None:
 # Global cache storage
 _persistent_cache: dict[str, Any] | None = None
 
+# Global cache hit tracking (last N hits for display)
+_cache_hit_tracking: list[tuple[str, str]] = []  # [(expr, cache_type)]
+_MAX_CACHE_HIT_TRACKING = 100  # Keep last 100 cache hits
+
 
 def get_persistent_cache() -> dict[str, Any]:
     """Get or initialize the persistent cache."""
@@ -144,26 +148,40 @@ def get_persistent_cache() -> dict[str, Any]:
     return _persistent_cache
 
 
-def update_eval_cache(preprocessed_expr: str, result_json: str) -> None:
+def update_eval_cache(
+    preprocessed_expr: str, result_json: str, compute_time: float | None = None
+) -> None:
     """Update the persistent evaluation cache.
 
     Args:
         preprocessed_expr: Preprocessed expression string
         result_json: JSON string of the evaluation result
+        compute_time: Time taken to compute (in seconds), or None if not measured
     """
     cache = get_persistent_cache()
-    cache["eval_cache"][preprocessed_expr] = result_json
+    # Store as dict with result and timing
+    cache_entry = {"result": result_json}
+    if compute_time is not None:
+        cache_entry["time"] = compute_time
+    cache["eval_cache"][preprocessed_expr] = cache_entry
 
 
-def update_subexpr_cache(preprocessed_expr: str, result_value: str) -> None:
+def update_subexpr_cache(
+    preprocessed_expr: str, result_value: str, compute_time: float | None = None
+) -> None:
     """Update the persistent sub-expression cache.
 
     Args:
         preprocessed_expr: Preprocessed sub-expression string
         result_value: String representation of the cached value
+        compute_time: Time taken to compute (in seconds), or None if not measured
     """
     cache = get_persistent_cache()
-    cache["subexpr_cache"][preprocessed_expr] = result_value
+    # Store as dict with value and timing
+    cache_entry = {"value": result_value}
+    if compute_time is not None:
+        cache_entry["time"] = compute_time
+    cache["subexpr_cache"][preprocessed_expr] = cache_entry
 
 
 def get_cached_eval(preprocessed_expr: str) -> str | None:
@@ -176,7 +194,39 @@ def get_cached_eval(preprocessed_expr: str) -> str | None:
         Cached result JSON string, or None if not found
     """
     cache = get_persistent_cache()
-    return cache["eval_cache"].get(preprocessed_expr)
+    entry = cache["eval_cache"].get(preprocessed_expr)
+    if entry is None:
+        return None
+    # Track cache hit
+    global _cache_hit_tracking
+    _cache_hit_tracking.append((preprocessed_expr, "eval"))
+    if len(_cache_hit_tracking) > _MAX_CACHE_HIT_TRACKING:
+        _cache_hit_tracking.pop(0)  # Remove oldest
+    # Support both old format (string) and new format (dict)
+    if isinstance(entry, dict):
+        return entry.get("result")
+    return entry  # Old format - just return the string
+
+
+def get_cached_eval_with_time(
+    preprocessed_expr: str,
+) -> tuple[str | None, float | None]:
+    """Get cached evaluation result with timing information.
+
+    Args:
+        preprocessed_expr: Preprocessed expression string
+
+    Returns:
+        Tuple of (cached result JSON string or None, compute time in seconds or None)
+    """
+    cache = get_persistent_cache()
+    entry = cache["eval_cache"].get(preprocessed_expr)
+    if entry is None:
+        return None, None
+    # Support both old format (string) and new format (dict)
+    if isinstance(entry, dict):
+        return entry.get("result"), entry.get("time")
+    return entry, None  # Old format - no timing info
 
 
 def get_cached_subexpr(preprocessed_expr: str) -> str | None:
@@ -189,7 +239,55 @@ def get_cached_subexpr(preprocessed_expr: str) -> str | None:
         Cached value string, or None if not found
     """
     cache = get_persistent_cache()
-    return cache["subexpr_cache"].get(preprocessed_expr)
+    entry = cache["subexpr_cache"].get(preprocessed_expr)
+    if entry is None:
+        return None
+    # Track cache hit
+    global _cache_hit_tracking
+    _cache_hit_tracking.append((preprocessed_expr, "subexpr"))
+    if len(_cache_hit_tracking) > _MAX_CACHE_HIT_TRACKING:
+        _cache_hit_tracking.pop(0)  # Remove oldest
+    # Support both old format (string) and new format (dict)
+    if isinstance(entry, dict):
+        return entry.get("value")
+    return entry  # Old format - just return the string
+
+
+def get_cached_subexpr_with_time(
+    preprocessed_expr: str,
+) -> tuple[str | None, float | None]:
+    """Get cached sub-expression value with timing information.
+
+    Args:
+        preprocessed_expr: Preprocessed sub-expression string
+
+    Returns:
+        Tuple of (cached value string or None, compute time in seconds or None)
+    """
+    cache = get_persistent_cache()
+    entry = cache["subexpr_cache"].get(preprocessed_expr)
+    if entry is None:
+        return None, None
+    # Support both old format (string) and new format (dict)
+    if isinstance(entry, dict):
+        return entry.get("value"), entry.get("time")
+    return entry, None  # Old format - no timing info
+
+
+def get_cache_hits() -> list[tuple[str, str]]:
+    """Get the list of recent cache hits.
+
+    Returns:
+        List of tuples (expression, cache_type) where cache_type is "eval" or "subexpr"
+    """
+    global _cache_hit_tracking
+    return _cache_hit_tracking.copy()
+
+
+def clear_cache_hits() -> None:
+    """Clear the cache hit tracking list."""
+    global _cache_hit_tracking
+    _cache_hit_tracking = []
 
 
 def save_cache_to_disk() -> None:

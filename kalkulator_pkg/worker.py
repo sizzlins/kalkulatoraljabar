@@ -92,6 +92,224 @@ def _limit_resources() -> None:
         pass
 
 
+def _format_evaluation_result(expr: sp.Basic) -> str:
+    """Format a SymPy expression result as a canonical string.
+
+    This ensures numeric results like sin(0) -> "0" and cos(0) -> "1"
+    are formatted consistently for tests and output.
+
+    Args:
+        expr: SymPy expression to format
+
+    Returns:
+        Canonical string representation
+    """
+    # Try numeric evaluation first for exact results
+    try:
+        num_val = sp.N(expr, 15)
+        if hasattr(num_val, "is_Number") and num_val.is_Number:
+            # Check if it's real (imaginary part is negligible)
+            try:
+                imag_part = abs(sp.im(num_val))
+                if imag_part > 1e-10:
+                    # Has significant imaginary part - return symbolic form
+                    return str(expr)
+            except (AttributeError, TypeError):
+                pass
+
+            # It's a real number - format canonically
+            # Exact zero -> "0"
+            if num_val == 0 or num_val == sp.S.Zero:
+                return "0"
+            # Exact one -> "1"
+            if num_val == 1 or num_val == sp.S.One:
+                return "1"
+
+            # For other numbers, use appropriate format
+            if hasattr(num_val, "is_Rational") and num_val.is_Rational:
+                # Exact rationals: preserve exact representation
+                return str(num_val)
+            elif hasattr(num_val, "is_Integer") and num_val.is_Integer:
+                # Integers: simple string
+                return str(num_val)
+            else:
+                # Floating point: format with fixed precision, strip trailing zeros
+                s = str(num_val)
+                if "." in s:
+                    s = s.rstrip("0").rstrip(".")
+                return s
+    except (ValueError, TypeError, ArithmeticError, AttributeError):
+        pass
+
+    # If numeric evaluation fails or result isn't numeric, return symbolic string
+    return str(expr)
+
+
+def _get_user_friendly_error_message(error: Exception, input_str: str) -> tuple[str, str]:
+    """Generate user-friendly error messages for common errors.
+    
+    Returns:
+        Tuple of (error_message, error_code)
+    """
+    error_type = type(error).__name__
+    error_msg = str(error)
+    input_stripped = input_str.strip()
+    
+    # Check for common single-character operator errors
+    if input_stripped in ["-", "+", "*", "/", "^", "%"]:
+        return (
+            f"'{input_stripped}' is an operator, not a complete expression. "
+            f"Use it in an expression like '5{input_stripped}3' or 'x{input_stripped}2'.",
+            "INCOMPLETE_EXPRESSION"
+        )
+    
+    # Check for empty or whitespace-only input
+    if not input_stripped or input_stripped.isspace():
+        return (
+            "Empty input. Please enter a valid expression, equation, or command.",
+            "EMPTY_INPUT"
+        )
+    
+    # Check for backslash at end (line continuation character)
+    if len(input_stripped) > 0 and input_stripped[-1] == "\\":
+        return (
+            "Expression ends with '\\' (backslash), which is a line continuation character. "
+            "Remove the backslash or complete the expression on the next line.",
+            "INCOMPLETE_EXPRESSION"
+        )
+    
+    # Check for unterminated expressions (ends with operator)
+    if len(input_stripped) > 0 and input_stripped[-1] in ["-", "+", "*", "/", "^", "%", "="]:
+        return (
+            f"Expression ends with '{input_stripped[-1]}'. "
+            f"Complete the expression, for example: '5{input_stripped[-1]}3' or 'x{input_stripped[-1]}2'.",
+            "INCOMPLETE_EXPRESSION"
+        )
+    
+    # Check for TokenError (from tokenize module) - often indicates syntax issues like backslash
+    error_type_name = type(error).__name__
+    if "TokenError" in error_type_name:
+        if "unexpected EOF" in error_msg.lower() or "multi-line statement" in error_msg.lower():
+            # Check if input ends with backslash
+            if len(input_stripped) > 0 and input_stripped[-1] == "\\":
+                return (
+                    "Expression ends with '\\' (backslash), which is a line continuation character. "
+                    "Remove the backslash or complete the expression on the next line.",
+                    "INCOMPLETE_EXPRESSION"
+                )
+            return (
+                "Incomplete expression: Backslash '\\' at the end indicates line continuation. "
+                "Remove the backslash or complete the expression on the next line.",
+                "INCOMPLETE_EXPRESSION"
+            )
+    
+    # Check for SyntaxError with specific patterns
+    if isinstance(error, SyntaxError):
+        if "unexpected EOF" in error_msg.lower() or "EOF" in error_msg:
+            # Check if it's specifically about multi-line statement (backslash issue)
+            if "multi-line statement" in error_msg.lower():
+                return (
+                    "Incomplete expression: Backslash '\\' at the end indicates line continuation. "
+                    "Remove the backslash or complete the expression on the next line.",
+                    "INCOMPLETE_EXPRESSION"
+                )
+            return (
+                "Incomplete expression. Check for missing operands, unmatched parentheses, or unterminated strings.",
+                "SYNTAX_ERROR"
+            )
+        if "leading zeros" in error_msg.lower() or "0o prefix" in error_msg.lower():
+            # Check if input looks like a hexadecimal number
+            input_clean = input_str.strip()
+            # Look for patterns like "123edc09f2" (hex digits)
+            import re
+            hex_pattern = re.compile(r'[0-9a-fA-F]{4,}')
+            if hex_pattern.search(input_clean):
+                return (
+                    f"Invalid number format: '{input_clean}'. "
+                    f"If this is a hexadecimal number, use '0x' prefix: '0x{input_clean}'. "
+                    f"Otherwise, check for invalid leading zeros in decimal numbers.",
+                    "SYNTAX_ERROR"
+                )
+            return (
+                "Invalid number format: Leading zeros are not allowed in decimal integers. "
+                "Use 0x prefix for hexadecimal numbers (e.g., 0x09), or remove leading zeros from decimal numbers.",
+                "SYNTAX_ERROR"
+            )
+        if "invalid syntax" in error_msg.lower():
+            # Check if error mentions leading zeros (hex number issue)
+            if "leading zeros" in error_msg.lower():
+                # Check if input looks like a hexadecimal number
+                input_clean = input_str.strip()
+                import re
+                hex_pattern = re.compile(r'[0-9a-fA-F]{4,}')
+                if hex_pattern.search(input_clean):
+                    return (
+                        f"Invalid number format: '{input_clean}' looks like a hexadecimal number. "
+                        f"Use '0x' prefix: '0x{input_clean}'.",
+                        "SYNTAX_ERROR"
+                    )
+            # Try to extract position information
+            if hasattr(error, "offset") and error.offset:
+                pos = error.offset
+                if pos <= len(input_str):
+                    char_at_pos = input_str[pos-1:pos] if pos > 0 else ""
+                    return (
+                        f"Invalid syntax at position {pos} (character '{char_at_pos}'). "
+                        f"Check for typos, missing operators, or incorrect function syntax.",
+                        "SYNTAX_ERROR"
+                    )
+            return (
+                "Invalid syntax. Check for typos, missing operators, unmatched parentheses, or incorrect function calls.",
+                "SYNTAX_ERROR"
+            )
+    
+    # Check for ValueError with specific patterns
+    if isinstance(error, ValueError):
+        if "cannot assign" in error_msg.lower():
+            return (
+                "Cannot use '=' for assignment in this context. "
+                "For equations, use '==' (double equals). For variable assignments, use separate statements.",
+                "PARSE_ERROR"
+            )
+        if "invalid" in error_msg.lower() and "name" in error_msg.lower():
+            return (
+                f"Invalid variable or function name. "
+                f"Names must start with a letter and contain only letters, numbers, and underscores.",
+                "INVALID_NAME"
+            )
+    
+    # Check for TokenError (unterminated strings, etc.)
+    try:
+        import tokenize
+        if isinstance(error, tokenize.TokenError):
+            if "unterminated" in error_msg.lower():
+                return (
+                    "Unmatched or unterminated string literal. Check that all quotes are properly closed and matched.",
+                    "SYNTAX_ERROR"
+                )
+    except (ImportError, AttributeError):
+        pass
+    
+    # Check for common parse error patterns
+    if "parse" in error_msg.lower() or "PARSE_ERROR" in error_type:
+        if "unexpected" in error_msg.lower():
+            return (
+                f"Unexpected token or character. {error_msg}",
+                "PARSE_ERROR"
+            )
+        if "invalid" in error_msg.lower():
+            return (
+                f"Invalid expression format. {error_msg}",
+                "PARSE_ERROR"
+            )
+    
+    # Default error message
+    return (
+        f"{error_msg}. Please check your input syntax.",
+        "PARSE_ERROR"
+    )
+
+
 def worker_evaluate(preprocessed_expr: str) -> dict[str, Any]:
     """Evaluate a preprocessed expression in a sandboxed worker."""
     logger.debug(f"Evaluating expression: {preprocessed_expr[:100]}...")
@@ -107,68 +325,52 @@ def worker_evaluate(preprocessed_expr: str) -> dict[str, Any]:
         logger.warning(f"Validation error: {e.code} - {e.message}")
         return {"ok": False, "error": str(e), "error_code": e.code}
     except (ValueError, SyntaxError) as e:
-        logger.warning(f"Parse error: {e}")
-        error_msg = str(e)
-        # Provide helpful hints for common errors
-        if "cannot assign" in error_msg.lower() or "==" in error_msg.lower():
-            error_msg += " Hint: If you're writing an equation, use '==' instead of '='. For assignments in REPL, use separate statements like 'a = expression' followed by 'equation = 0'."
+        # Only log at debug level since we're providing a user-friendly error message
+        logger.debug(f"Parse error: {e}")
+        error_msg, error_code = _get_user_friendly_error_message(e, preprocessed_expr)
         return {
             "ok": False,
-            "error": f"Parse error: {error_msg}",
-            "error_code": "PARSE_ERROR",
+            "error": error_msg,
+            "error_code": error_code,
         }
     except Exception as e:
-        # Check for specific error types that need better messages
-        error_type = type(e).__name__
-        error_msg = str(e)
-
-        # Handle TokenError (unterminated string literal, etc.)
-        # TokenError comes from tokenize module when parsing Python-like syntax
-        # Check if it's a tokenize.TokenError
-        is_token_error = False
-        try:
-            import tokenize
-
-            is_token_error = isinstance(e, tokenize.TokenError)
-        except (ImportError, AttributeError):
-            # Fallback: check by name
-            is_token_error = error_type == "TokenError"
-
-        if is_token_error:
-            if (
-                "unterminated string literal" in error_msg.lower()
-                or "unterminated" in error_msg.lower()
-            ):
-                return {
-                    "ok": False,
-                    "error": "Syntax error: Unmatched or unterminated string literal. Check that all quotes are properly closed and matched.",
-                    "error_code": "SYNTAX_ERROR",
-                }
-            return {
-                "ok": False,
-                "error": f"Syntax error: {error_msg}",
-                "error_code": "SYNTAX_ERROR",
-            }
-
-        # Log full traceback for unexpected errors but return clean message
-        logger.exception("Unexpected parse error in worker")
-
-        # Try to extract useful information from the error
-        if "assign" in error_msg.lower() and "==" in error_msg.lower():
-            return {
-                "ok": False,
-                "error": f"Parse error: {error_msg}. Hint: Use '==' for equations, '=' for assignments. Mixed assignments and equations must be separated (e.g., 'a = expression' on one line, then solve the equation separately).",
-                "error_code": "PARSE_ERROR",
-            }
-
+        # Check if this is a TokenError (from tokenize module) which often indicates syntax issues
+        error_type_name = type(e).__name__
+        is_token_error = "TokenError" in error_type_name
+        
+        # Use the user-friendly error message helper
+        error_msg, error_code = _get_user_friendly_error_message(e, preprocessed_expr)
+        
+        # For syntax/parse/tokenize errors, log at debug level since we have a user-friendly message
+        if isinstance(e, (SyntaxError, ValueError)) or is_token_error:
+            logger.debug(f"Parse/tokenize error: {e}")
+        else:
+            # Log full traceback for truly unexpected errors
+            logger.exception("Unexpected parse error in worker")
+        
         return {
             "ok": False,
-            "error": f"Parse error: {error_msg}. Please check your syntax.",
-            "error_code": "UNKNOWN_ERROR",
+            "error": error_msg,
+            "error_code": error_code,
         }
+    
+    # Handle None result (e.g., from print() which executes but returns None)
+    if expr is None:
+        return {
+            "ok": True,
+            "result": "None",
+            "approx": None,
+            "free_symbols": [],
+        }
+    
     try:
+        # Evaluate the expression - simplify first to get symbolic form
         res = sp.simplify(expr)
-        result_str = str(res)
+
+        # Format result string with canonical numeric representation
+        # This ensures sin(0) -> "0" and cos(0) -> "1" consistently
+        result_str = _format_evaluation_result(res)
+
         free_syms = [str(s) for s in getattr(res, "free_symbols", set())]
         approx = None
         try:
@@ -808,32 +1010,95 @@ def _worker_solve_dispatch(payload: dict[str, Any]) -> dict[str, Any]:
 _WORKER_MANAGER = _WorkerManager()
 
 
+def warmup_workers() -> None:
+    """Pre-initialize worker processes to avoid startup delay on first calculation.
+    
+    This function starts worker processes early so that the first calculation
+    doesn't have to wait for process spawning and module imports.
+    """
+    if ENABLE_PERSISTENT_WORKER and Process is not None:
+        try:
+            if not _WORKER_MANAGER.is_alive():
+                _WORKER_MANAGER.start()
+                # Send a warmup request to ensure workers are fully initialized
+                # This triggers module imports in worker processes
+                try:
+                    _WORKER_MANAGER.request(
+                        {"type": "eval", "preprocessed": "1"}, timeout=2
+                    )
+                except Exception:
+                    # Ignore warmup errors - workers will be ready on real request
+                    pass
+        except Exception:
+            # If warmup fails, workers will start on first real request
+            pass
+
+
 def _worker_eval_cached(preprocessed_expr: str) -> str:
     """Evaluate expression with persistent cache support."""
     # Check persistent cache first
     try:
-        from .cache_manager import get_cached_eval
+        from .cache_manager import get_cached_eval, get_cache_hits
 
         cached_result = get_cached_eval(preprocessed_expr)
         if cached_result is not None:
             if logger:
                 logger.debug(f"Cache hit for: {preprocessed_expr[:50]}")
+            # Cache hit was tracked by get_cached_eval above
+            # Get the cache hits from this process and attach them to the result
+            worker_cache_hits = get_cache_hits()
+            # Always attach cache hits - if get_cache_hits() didn't return it, add it manually
+            if not worker_cache_hits:
+                # Manual fallback: add the current expression as a cache hit
+                worker_cache_hits = [(preprocessed_expr, "eval")]
+            try:
+                cached_data = json.loads(cached_result)
+                # Always add cache hits
+                cached_data["cache_hits"] = worker_cache_hits
+                return json.dumps(cached_data)
+            except (json.JSONDecodeError, TypeError):
+                # If parsing fails, return original (old format)
+                # Create new dict with cache hit info
+                try:
+                    return json.dumps(
+                        {
+                            "ok": True,
+                            "result": (
+                                cached_result
+                                if isinstance(cached_result, str)
+                                else json.loads(cached_result).get("result", "")
+                            ),
+                            "cache_hits": (
+                                worker_cache_hits
+                                if worker_cache_hits
+                                else [(preprocessed_expr, "eval")]
+                            ),
+                        }
+                    )
+                except:
+                    pass
             return cached_result
     except ImportError:
         pass
 
-    # Not in persistent cache, evaluate normally
+    # Not in persistent cache, evaluate normally and measure time
+    start_time = time.perf_counter()
     resp = _WORKER_MANAGER.request(
         {"type": "eval", "preprocessed": preprocessed_expr}, timeout=WORKER_TIMEOUT
     )
+    compute_time = time.perf_counter() - start_time
+
     if isinstance(resp, dict):
         result_json = json.dumps(resp)
         # Save to persistent cache if evaluation was successful
         try:
-            from .cache_manager import update_eval_cache, update_subexpr_cache  # noqa: F811
+            from .cache_manager import (  # noqa: F811
+                update_eval_cache,
+                update_subexpr_cache,
+            )
 
             if resp.get("ok"):
-                update_eval_cache(preprocessed_expr, result_json)
+                update_eval_cache(preprocessed_expr, result_json, compute_time)
                 # Also cache as sub-expression if it's a simple numeric result
                 result_value = resp.get("result", "")
                 approx_value = resp.get("approx", "")
@@ -845,12 +1110,15 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
                     # Cache the sub-expression mapping
                     cache_value = approx_value if approx_value else result_value
                     if cache_value:
-                        update_subexpr_cache(preprocessed_expr, cache_value)
+                        update_subexpr_cache(
+                            preprocessed_expr, cache_value, compute_time
+                        )
         except ImportError:
             pass
         return result_json
     cmd = _build_self_cmd(["--worker", "--expr", preprocessed_expr])
     try:
+        start_time_subproc = time.perf_counter()
         proc = subprocess.run(
             cmd,
             capture_output=True,
@@ -859,15 +1127,19 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
             encoding="utf-8",
             errors="replace",  # Replace invalid UTF-8 bytes instead of raising error
         )
+        compute_time = time.perf_counter() - start_time_subproc
         result_text = proc.stdout or ""
         # Try to save to persistent cache
         try:
-            from .cache_manager import update_eval_cache, update_subexpr_cache  # noqa: F811
+            from .cache_manager import (  # noqa: F811
+                update_eval_cache,
+                update_subexpr_cache,
+            )
 
             try:
                 result_data = json.loads(result_text)
                 if result_data.get("ok"):
-                    update_eval_cache(preprocessed_expr, result_text)
+                    update_eval_cache(preprocessed_expr, result_text, compute_time)
                     result_value = result_data.get("result", "")
                     approx_value = result_data.get("approx", "")
                     # Only cache pure numeric expressions
@@ -877,7 +1149,9 @@ def _worker_eval_cached(preprocessed_expr: str) -> str:
                     ):
                         cache_value = approx_value if approx_value else result_value
                         if cache_value:
-                            update_subexpr_cache(preprocessed_expr, cache_value)
+                            update_subexpr_cache(
+                                preprocessed_expr, cache_value, compute_time
+                            )
             except (json.JSONDecodeError, KeyError):
                 pass
         except ImportError:
@@ -935,9 +1209,17 @@ def _worker_solve_cached(payload_json: str) -> str:
 def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> dict[str, Any]:
     """Safely evaluate an expression string via worker sandbox."""
     from .parser import preprocess
+    from .cache_manager import clear_cache_hits, get_cache_hits
 
+    # Clear cache hits at the start (before any operations)
+    clear_cache_hits()
+
+    # Track sub-expression cache hits from preprocessing
+    subexpr_cache_hits: list[tuple[str, str]] = []
     try:
         pre = preprocess(expr)
+        # Capture sub-expression cache hits from preprocessing (in main process)
+        subexpr_cache_hits = get_cache_hits()
     except ValidationError as e:
         return {"ok": False, "error": str(e), "error_code": e.code}
     except ValueError as e:
@@ -959,6 +1241,8 @@ def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> dict[str, Any]:
         return {"ok": False, "error": "Preprocess error", "error_code": "UNKNOWN_ERROR"}
     try:
         stdout_text = _worker_eval_cached(pre)
+        # Cache hits are now embedded in the JSON response from _worker_eval_cached
+        # So we'll extract them after parsing JSON below
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "Evaluation timed out.", "error_code": "TIMEOUT"}
     except (OSError, ValueError) as e:
@@ -978,6 +1262,23 @@ def evaluate_safely(expr: str, timeout: int = WORKER_TIMEOUT) -> dict[str, Any]:
         }
     try:
         data = json.loads(stdout_text)
+        # Cache hits are now embedded in the JSON from _worker_eval_cached
+        # Extract them if present, otherwise ensure it's an empty list
+        worker_hits = data.get("cache_hits", [])
+        # JSON deserializes tuples as lists, so convert back to tuples for consistency
+        worker_hits_tuples = [
+            tuple(hit) if isinstance(hit, list) else hit for hit in worker_hits
+        ]
+        # Merge sub-expression cache hits (from preprocessing) with worker cache hits
+        # Combine both lists (avoid duplicates)
+        combined_hits = list(worker_hits_tuples)
+        for hit in subexpr_cache_hits:
+            # Convert to tuple if needed
+            hit_tuple = tuple(hit) if not isinstance(hit, tuple) else hit
+            if hit_tuple not in combined_hits:
+                combined_hits.append(hit_tuple)
+        # Always set cache_hits (even if empty) for consistency
+        data["cache_hits"] = combined_hits
         return data
     except (json.JSONDecodeError, ValueError, TypeError) as e:
         # Specific exceptions for JSON parsing

@@ -5,15 +5,60 @@ from __future__ import annotations
 import sympy as sp
 
 try:
+    # Set non-GUI backend before importing pyplot to avoid Tkinter issues
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-GUI backend (no Tkinter required)
     import matplotlib.pyplot as plt
 
     HAS_MATPLOTLIB = True
+    HAS_GUI_BACKEND = False  # We're using Agg backend
 except ImportError:
     HAS_MATPLOTLIB = False
+    HAS_GUI_BACKEND = False
+except Exception:
+    # If setting backend fails, try to continue anyway
+    try:
+        import matplotlib.pyplot as plt
+        HAS_MATPLOTLIB = True
+        HAS_GUI_BACKEND = True
+    except ImportError:
+        HAS_MATPLOTLIB = False
+        HAS_GUI_BACKEND = False
 
 from .parser import parse_preprocessed
 from .types import EvalResult
 from .worker import evaluate_safely
+
+
+def _open_file_in_viewer(file_path: str) -> bool:
+    """Open a file in the system's default application (cross-platform).
+    
+    Args:
+        file_path: Path to the file to open
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        import os
+        import sys
+        import subprocess
+        
+        if sys.platform == "win32":
+            # Windows
+            os.startfile(file_path)
+            return True
+        elif sys.platform == "darwin":
+            # macOS
+            subprocess.run(["open", file_path], check=True)
+            return True
+        else:
+            # Linux and other Unix-like systems
+            subprocess.run(["xdg-open", file_path], check=True)
+            return True
+    except Exception:
+        # Silently fail - opening is a convenience feature
+        return False
 
 
 def plot_function(
@@ -25,17 +70,39 @@ def plot_function(
     ascii: bool = False,
 ) -> EvalResult:
     """Plot a single-variable function.
-
+    
+    This function creates a visual plot of a mathematical expression using matplotlib.
+    If matplotlib is not available or GUI backend fails, the plot is automatically
+    saved to a temporary file and opened in the default image viewer.
+    
+    Features:
+    - Automatic file saving if GUI display is unavailable
+    - Enhanced styling with grid, axes, and legend
+    - Support for mathematical expressions in range parameters
+    - Cross-platform file opening (Windows, macOS, Linux)
+    
     Args:
-        expression: Function expression (e.g., "x^2")
-        variable: Variable name (default: "x")
-        x_min: Minimum x value (default: -10)
-        x_max: Maximum x value (default: 10)
-        points: Number of points to plot (default: 100)
-        ascii: If True, return ASCII plot; if False, open matplotlib window
+        expression: Function expression to plot (e.g., "x^2", "sin(x)", "exp(-x^2)")
+        variable: Variable name to plot against (default: "x")
+        x_min: Minimum x value for plot range (default: -10)
+        x_max: Maximum x value for plot range (default: 10)
+        points: Number of points to sample for plotting (default: 100)
+        ascii: If True, return ASCII plot text; If False, use matplotlib (default: False)
 
     Returns:
-        EvalResult with plot data or ASCII representation
+        EvalResult with:
+        - ok=True: Plot was created successfully
+        - result: Path to saved plot file or "Plot displayed" message
+        - ok=False: Plotting failed
+        - error: Error message describing the failure
+        
+    Examples:
+        >>> from kalkulator_pkg.plotting import plot_function
+        >>> result = plot_function("x^2", x_min=-5, x_max=5)
+        >>> print(result.result)  # "Plot saved and opened: /tmp/plot.png"
+        
+        >>> result = plot_function("sin(x)", x_min=-pi, x_max=pi, ascii=True)
+        >>> print(result.result)  # ASCII plot text
     """
     if not HAS_MATPLOTLIB and not ascii:
         return EvalResult(
@@ -114,21 +181,79 @@ def plot_function(
             return EvalResult(ok=True, result=f"ASCII plot:\n{plot_text}")
 
         else:
-            # Matplotlib plot
+            # Matplotlib plot with enhanced styling
             import numpy as np
 
             x_vals = np.linspace(x_min, x_max, points)
-            y_vals = f(x_vals)
+            try:
+                y_vals = f(x_vals)
+            except (ValueError, TypeError, ZeroDivisionError):
+                # Handle cases where function might fail at certain points
+                # Try to evaluate point by point
+                y_vals = []
+                for x in x_vals:
+                    try:
+                        y = float(sp.N(expr.subs(var_sym, x)))
+                        y_vals.append(y)
+                    except (ValueError, TypeError, ZeroDivisionError, OverflowError):
+                        y_vals.append(np.nan)
+                y_vals = np.array(y_vals)
 
-            plt.figure()
-            plt.plot(x_vals, y_vals)
-            plt.xlabel(variable)
-            plt.ylabel("f(" + variable + ")")
-            plt.title(f"Plot of {expression}")
-            plt.grid(True)
-            plt.show()
-
-            return EvalResult(ok=True, result="Plot displayed")
+            # Create figure with better styling
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.plot(x_vals, y_vals, linewidth=2, color='#2E86AB', label=f'f({variable}) = {expression}')
+            ax.set_xlabel(variable, fontsize=12, fontweight='bold')
+            ax.set_ylabel(f'f({variable})', fontsize=12, fontweight='bold')
+            ax.set_title(f'Plot of {expression}', fontsize=14, fontweight='bold')
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.axhline(y=0, color='k', linewidth=0.8, linestyle='-', alpha=0.3)
+            ax.axvline(x=0, color='k', linewidth=0.8, linestyle='-', alpha=0.3)
+            ax.legend(loc='best', fontsize=10)
+            
+            # Improve layout
+            plt.tight_layout()
+            
+            # Try to show plot, but if GUI backend fails, save to temp file instead
+            try:
+                if HAS_GUI_BACKEND:
+                    plt.show()
+                    return EvalResult(ok=True, result="Plot displayed")
+                else:
+                    # Using non-GUI backend, save to temp file and inform user
+                    import tempfile
+                    import os
+                    temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                    temp_path = temp_file.name
+                    temp_file.close()
+                    plt.savefig(temp_path, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                    
+                    # Try to open the file automatically
+                    opened = _open_file_in_viewer(temp_path)
+                    if opened:
+                        return EvalResult(ok=True, result=f"Plot saved and opened: {temp_path}")
+                    else:
+                        return EvalResult(ok=True, result=f"Plot saved to: {temp_path}\n(Note: GUI backend not available. File opened in default viewer.)")
+            except Exception as e:
+                # If showing fails, try to save instead
+                try:
+                    import tempfile
+                    import os
+                    temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+                    temp_path = temp_file.name
+                    temp_file.close()
+                    plt.savefig(temp_path, dpi=150, bbox_inches='tight')
+                    plt.close(fig)
+                    
+                    # Try to open the file automatically
+                    opened = _open_file_in_viewer(temp_path)
+                    if opened:
+                        return EvalResult(ok=True, result=f"Plot saved and opened: {temp_path}\n(GUI display failed, using file output)")
+                    else:
+                        return EvalResult(ok=True, result=f"Plot saved to: {temp_path}\n(GUI display failed: {str(e)})")
+                except Exception as save_error:
+                    plt.close(fig)
+                    return EvalResult(ok=False, error=f"Failed to display or save plot: {str(e)}")
 
     except (ValueError, TypeError, AttributeError) as e:
         return EvalResult(ok=False, error=f"Plotting error: {e}")

@@ -242,6 +242,202 @@ def solve_pell_equation_from_eq(eq: sp.Eq) -> str:
 ZERO_TOL = 1e-12
 
 
+def _solve_modulo_equation(equation: sp.Eq, variable: sp.Symbol) -> list[sp.Basic]:
+    """Solve a modulo equation of the form Mod(x, n) = k or x % n = k.
+
+    Args:
+        equation: SymPy equation
+        variable: Symbol to solve for
+
+    Returns:
+        List of solutions (parametric form if possible)
+    """
+    try:
+        # Check if equation is of the form Mod(x, n) = k or x % n = k
+        lhs = equation.lhs
+        rhs = equation.rhs
+        
+        # Check if LHS is Mod(variable, n)
+        if isinstance(lhs, sp.Mod):
+            # Mod(x, n) = k
+            if lhs.args[0] == variable:
+                n = lhs.args[1]
+                k = rhs
+                # Solution: x = k + n*t where t is an integer
+                t = sp.symbols("t", integer=True)
+                solution = k + n * t
+                return [solution]
+        
+        # Try SymPy's solve for modulo equations
+        try:
+            solutions = sp.solve(equation, variable, domain=sp.Integers)
+            if solutions:
+                if isinstance(solutions, dict):
+                    sol = solutions.get(variable)
+                    if sol is not None:
+                        return [sol]
+                elif isinstance(solutions, (list, tuple)) and solutions:
+                    return list(solutions)
+                elif solutions:
+                    return [solutions]
+        except (NotImplementedError, ValueError, TypeError):
+            pass
+        
+        # If no symbolic solution, try numeric approach
+        # For Mod(x, n) = k, solutions are x = k + n*t for integer t
+        # Return parametric solution
+        if isinstance(lhs, sp.Mod) and lhs.args[0] == variable:
+            n = lhs.args[1]
+            k = rhs
+            try:
+                # Try to get numeric values
+                n_val = float(sp.N(n))
+                k_val = float(sp.N(k))
+                if n_val > 0:
+                    t = sp.symbols("t", integer=True)
+                    solution = k_val + n_val * t
+                    return [solution]
+            except (ValueError, TypeError):
+                pass
+        
+        return []
+    except (NotImplementedError, ValueError, TypeError, AttributeError):
+        return []
+
+
+def solve_system_of_congruences(congruences: list[tuple[int, int]]) -> tuple[int, int] | None:
+    """Solve a system of congruences using the Chinese Remainder Theorem.
+    
+    Solves the system:
+        x ≡ a₁ (mod n₁)
+        x ≡ a₂ (mod n₂)
+        ...
+        x ≡ aₖ (mod nₖ)
+    
+    Args:
+        congruences: List of (a, n) tuples representing x ≡ a (mod n)
+        
+    Returns:
+        Tuple (k, m) representing the solution x ≡ k (mod m), or None if no solution exists
+    """
+    if not congruences:
+        return None
+    
+    try:
+        # Use SymPy's crt function if available
+        if hasattr(sp, 'crt'):
+            remainders = [a for a, n in congruences]
+            moduli = [n for a, n in congruences]
+            try:
+                result = sp.crt(moduli, remainders)
+                if result is None:
+                    return None
+                # Calculate the modulus (LCM of all moduli)
+                from math import lcm
+                m = lcm(*moduli)
+                # Normalize the remainder to be in [0, m)
+                k = result % m
+                return (k, m)
+            except (ValueError, TypeError, NotImplementedError):
+                pass
+        
+        # Manual implementation of CRT for two congruences at a time
+        # Start with first congruence
+        k, m = congruences[0]
+        k = k % m  # Normalize
+        
+        # Combine with each subsequent congruence
+        for a, n in congruences[1:]:
+            a = a % n  # Normalize
+            
+            # Check if moduli are coprime (required for CRT)
+            # If not coprime, we need to check consistency
+            from math import gcd, lcm
+            g = gcd(m, n)
+            
+            # Check consistency: k ≡ a (mod g)
+            if (k % g) != (a % g):
+                # System is inconsistent
+                return None
+            
+            # Combine congruences x ≡ k (mod m) and x ≡ a (mod n)
+            # We need to find x such that:
+            #   x = k + m*t₁  (for some integer t₁)
+            #   x = a + n*t₂  (for some integer t₂)
+            # This means: k + m*t₁ ≡ a (mod n)
+            # Rearranging: m*t₁ ≡ a - k (mod n)
+            
+            # Solve m*t ≡ (a - k) (mod n)
+            # This requires gcd(m, n) to divide (a - k), which we already checked
+            
+            # Use extended Euclidean algorithm to find t
+            # m*t ≡ (a - k) (mod n)
+            m_mod = m % n
+            target = (a - k) % n
+            
+            if g == 1:
+                # Moduli are coprime - use multiplicative inverse
+                # Find t such that m_mod * t ≡ target (mod n)
+                try:
+                    m_inv = pow(int(m_mod), -1, int(n))  # Modular inverse
+                    t = (target * m_inv) % n
+                except ValueError:
+                    # Fallback: try SymPy
+                    t_sym = sp.symbols('t', integer=True)
+                    eq = sp.Eq(m_mod * t_sym, target)
+                    try:
+                        sol = sp.solve(eq, t_sym, domain=sp.Integers)
+                        if sol:
+                            if isinstance(sol, dict):
+                                t = int(sol[t_sym]) % n
+                            elif isinstance(sol, list) and sol:
+                                t = int(sol[0]) % n
+                            else:
+                                return None
+                        else:
+                            return None
+                    except (ValueError, TypeError, NotImplementedError):
+                        return None
+            else:
+                # Moduli are not coprime, but system is consistent
+                # Divide by gcd: (m/g) * t ≡ (a-k)/g (mod n/g)
+                m_div = m_mod // g
+                n_div = n // g
+                target_div = target // g
+                
+                try:
+                    m_inv = pow(int(m_div), -1, int(n_div))
+                    t = (target_div * m_inv) % n_div
+                except ValueError:
+                    # Fallback
+                    t_sym = sp.symbols('t', integer=True)
+                    eq = sp.Eq(m_div * t_sym, target_div)
+                    try:
+                        sol = sp.solve(eq, t_sym, domain=sp.Integers)
+                        if sol:
+                            if isinstance(sol, dict):
+                                t = int(sol[t_sym]) % n_div
+                            elif isinstance(sol, list) and sol:
+                                t = int(sol[0]) % n_div
+                            else:
+                                return None
+                        else:
+                            return None
+                    except (ValueError, TypeError, NotImplementedError):
+                        return None
+            
+            # Update solution: x = k + m*t
+            k = k + m * t
+            m = lcm(m, n)
+            k = k % m  # Normalize
+        
+        return (k, m)
+        
+    except (ValueError, TypeError, AttributeError, ZeroDivisionError) as e:
+        logger.debug(f"Error solving system of congruences: {e}")
+        return None
+
+
 def _solve_linear_equation(equation: sp.Eq, variable: sp.Symbol) -> list[sp.Basic]:
     """Solve a linear equation of the form a*x + b = 0.
 
@@ -478,7 +674,17 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
             }
 
     rhs_s = rhs_s or "0"
+    # Clear cache hits at start to track fresh hits for this equation
+    try:
+        from .cache_manager import clear_cache_hits
+
+        clear_cache_hits()
+    except ImportError:
+        pass
     lhs = evaluate_safely(lhs_s)
+    # Capture cache hits from LHS evaluation
+    cache_hits: list[tuple[str, str]] = []
+    cache_hits.extend(lhs.get("cache_hits", []))
     if not lhs.get("ok"):
         error_msg = f"Failed to parse left-hand side '{lhs_s}': {lhs.get('error')}"
         error_code = lhs.get("error_code", "PARSE_ERROR")
@@ -502,6 +708,8 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
             "error_code": error_code,
         }
     rhs = evaluate_safely(rhs_s)
+    # Capture cache hits from RHS evaluation
+    cache_hits.extend(rhs.get("cache_hits", []))
     if not rhs.get("ok"):
         error_msg = f"Failed to parse right-hand side '{rhs_s}': {rhs.get('error')}"
         error_code = rhs.get("error_code", "PARSE_ERROR")
@@ -517,7 +725,10 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
         elif "cannot assign" in str(rhs.get("error", "")).lower():
             error_msg += ". Hint: The right-hand side contains an equation '= 0'. If you're assigning a variable to an equation result, you cannot nest equations inside assignments. Try: 'a = expression' then solve 'expression = 0' separately."
         else:
-            error_msg += ". Please check your input syntax."
+            # Don't add duplicate "Please check your input syntax" if error message already contains it
+            # or if it already ends with a period (user-friendly messages are usually complete)
+            if "Please check your input syntax" not in error_msg and not error_msg.endswith("."):
+                error_msg += ". Please check your input syntax."
 
         return {
             "ok": False,
@@ -538,7 +749,12 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
         try:
             pell_str = solve_pell_equation_from_eq(equation)
             # Don't prettify Pell solutions to avoid Unicode issues on Windows
-            return {"ok": True, "type": "pell", "solution": pell_str}
+            return {
+                "ok": True,
+                "type": "pell",
+                "solution": pell_str,
+                "cache_hits": cache_hits,
+            }
         except ValueError as e:
             logger.warning("Pell solver error: invalid equation", exc_info=True)
             return {
@@ -562,6 +778,7 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
                     "ok": True,
                     "type": "identity_or_contradiction",
                     "result": "Identity",
+                    "cache_hits": cache_hits,
                 }
         except (TypeError, ValueError, AttributeError, NotImplementedError):
             # These are expected for some expressions that can't be simplified
@@ -571,21 +788,54 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
             logger.debug(f"Unexpected error in simplify check: {e}", exc_info=True)
             simp = None
         try:
+            # First, try SymPy's equals() method which handles symbolic equality well
+            # This can catch cases like pi expressions that are symbolically equal
+            try:
+                if left_expr.equals(right_expr):
+                    return {
+                        "ok": True,
+                        "type": "identity_or_contradiction",
+                        "result": "Identity",
+                        "cache_hits": cache_hits,
+                    }
+            except Exception:
+                # equals() might fail for some expressions, continue to numeric check
+                pass
+            
+            # Numeric comparison with relative tolerance
+            # Use higher precision for evaluation
             diff = sp.N(left_expr - right_expr, 60)
             re_diff = sp.re(diff)
             im_diff = sp.im(diff)
-            tol = sp.N(10) ** (-45)
+            
+            # Calculate relative tolerance based on the magnitude of the expressions
+            # This handles both small and large numbers better
+            try:
+                left_val = abs(float(sp.N(left_expr, 30)))
+                right_val = abs(float(sp.N(right_expr, 30)))
+                max_magnitude = max(left_val, right_val, 1.0)  # At least 1.0 to avoid division by very small numbers
+                # Use relative tolerance: 1e-10 relative to the magnitude
+                rel_tol = max_magnitude * 1e-10
+                # Also use absolute tolerance for very small numbers
+                abs_tol = 1e-12
+                tol = max(rel_tol, abs_tol)
+            except (TypeError, ValueError, OverflowError):
+                # Fallback to absolute tolerance if relative calculation fails
+                tol = 1e-12
+            
             if abs(re_diff) < tol and abs(im_diff) < tol:
                 return {
                     "ok": True,
                     "type": "identity_or_contradiction",
                     "result": "Identity (numeric)",
+                    "cache_hits": cache_hits,
                 }
             else:
                 return {
                     "ok": True,
                     "type": "identity_or_contradiction",
                     "result": "Contradiction (numeric)",
+                    "cache_hits": cache_hits,
                 }
         except (TypeError, ValueError, AttributeError):
             # Expected for some expressions that can't be evaluated numerically
@@ -593,6 +843,7 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
                 "ok": True,
                 "type": "identity_or_contradiction",
                 "result": "Contradiction (unable to confirm identity symbolically or numerically)",
+                "cache_hits": cache_hits,
             }
         except Exception as e:
             # Unexpected error - log it but still return reasonable result
@@ -603,6 +854,7 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
                 "ok": True,
                 "type": "identity_or_contradiction",
                 "result": "Contradiction (unable to confirm identity symbolically or numerically)",
+                "cache_hits": cache_hits,
             }
 
     # Use module-level _numeric_roots_for_single_var function (defined above)
@@ -891,6 +1143,41 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
                     }
             # Try specialized handlers first for polynomial equations
             try:
+                # Check for modulo equations first (before polynomial detection)
+                if equation.has(sp.Mod):
+                    handler_sols = _solve_modulo_equation(equation, sym)
+                    if handler_sols:
+                        # Format modulo solutions nicely
+                        formatted_sols = []
+                        for sol in handler_sols:
+                            sol_str = str(sp.simplify(sol))
+                            formatted_sols.append(sol_str)
+                        exact_sols_list = formatted_sols
+                        # Also compute some numeric examples
+                        approx_sols_list = []
+                        try:
+                            # Extract n and k from Mod(x, n) = k
+                            if isinstance(equation.lhs, sp.Mod):
+                                n = float(sp.N(equation.lhs.args[1]))
+                                k = float(sp.N(equation.rhs))
+                                # Generate some example solutions
+                                example_sols = []
+                                for t_val in range(-3, 4):
+                                    x_val = k + n * t_val
+                                    example_sols.append(x_val)
+                                approx_sols_list = [str(int(x)) if x == int(x) else str(x) for x in example_sols]
+                        except (ValueError, TypeError, AttributeError):
+                            pass
+                        # Continue to format and return results
+                        if exact_sols_list or approx_sols_list:
+                            return {
+                                "ok": True,
+                                "type": "equation",
+                                "exact": exact_sols_list,
+                                "approx": approx_sols_list,
+                                "cache_hits": cache_hits,
+                            }
+                
                 # Detect equation type and route to appropriate handler
                 poly = sp.Poly(equation.lhs - equation.rhs, sym)
                 if poly is not None and poly.degree() > 0:
@@ -1143,7 +1430,13 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
                 except (ValueError, TypeError, OverflowError, ArithmeticError):
                     # Expected for some symbolic solutions
                     approx.append(None)
-            return {"ok": True, "type": "equation", "exact": exacts, "approx": approx}
+            return {
+                "ok": True,
+                "type": "equation",
+                "exact": exacts,
+                "approx": approx,
+                "cache_hits": cache_hits,
+            }
         multi_solutions: dict[str, list[str]] = {}
         multi_approx: dict[str, list[str | None]] = {}
         for sym in symbols:
@@ -1177,22 +1470,16 @@ def solve_single_equation(eq_str: str, find_var: str | None = None) -> dict[str,
                 logger.warning(f"Error solving for {sym}", exc_info=True)
                 multi_solutions[str(sym)] = [f"Error: {e}"]
                 multi_approx[str(sym)] = [None]
-            except Exception as e:
-                logger.error(f"Unexpected error solving for {sym}", exc_info=True)
-                multi_solutions[str(sym)] = [f"Unexpected error: {e}"]
-                multi_approx[str(sym)] = [None]
-        return {
-            "ok": True,
-            "type": "multi_isolate",
-            "solutions": multi_solutions,
-            "approx": multi_approx,
-        }
     except Exception as e:
-        return {
-            "ok": False,
-            "error": f"Solving error: {e}",
-            "error_code": "SOLVER_ERROR",
-        }
+        logger.error(f"Unexpected error solving for {sym}", exc_info=True)
+        multi_solutions[str(sym)] = [f"Unexpected error: {e}"]
+        multi_approx[str(sym)] = [None]
+    return {
+        "ok": True,
+        "type": "multi_isolate",
+        "solutions": multi_solutions,
+        "approx": multi_approx,
+    }
 
 
 def _parse_relational_fallback(rel_str: str) -> sp.Basic:
@@ -1339,7 +1626,9 @@ def solve_system(raw_no_find: str, find_token: str | None) -> dict[str, Any]:
             - approx: List of approximate solutions (for system_var)
             - error: Error message if ok is False
     """
-    parts = [p.strip() for p in raw_no_find.split(",") if p.strip()]
+    # Use split_top_level_commas to properly handle commas inside parentheses
+    from .parser import split_top_level_commas
+    parts = [p.strip() for p in split_top_level_commas(raw_no_find) if p.strip()]
     eqs_serialized = []
     assignments = {}
     for p in parts:

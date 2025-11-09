@@ -6,3 +6,7 @@ mpmath==1.3.0
 # matplotlib>=3.5.0
 # numpy>=1.21.0
 
+# Optional dependencies for advanced function finding
+# numpy>=1.21.0  # For sparse regression (LASSO/OMP)
+# scikit-learn>=1.0.0  # For LASSO regression (optional, has fallback)
+

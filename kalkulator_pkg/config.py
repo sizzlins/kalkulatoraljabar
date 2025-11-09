@@ -89,6 +89,37 @@ ROOT_DEDUP_TOLERANCE = float(
     os.getenv("KALKULATOR_ROOT_DEDUP_TOLERANCE", "1e-6")
 )  # For deduplicating roots
 
+# Function finding tolerances and precision
+ABSOLUTE_TOLERANCE = float(
+    os.getenv("KALKULATOR_ABSOLUTE_TOLERANCE", "1e-10")
+)  # Absolute tolerance for exact fits
+RELATIVE_TOLERANCE = float(
+    os.getenv("KALKULATOR_RELATIVE_TOLERANCE", "1e-8")
+)  # Relative tolerance for approximate fits
+RESIDUAL_THRESHOLD = float(
+    os.getenv("KALKULATOR_RESIDUAL_THRESHOLD", "1e-6")
+)  # Threshold for residual checking
+CONSTANT_DETECTION_TOLERANCE = float(
+    os.getenv("KALKULATOR_CONSTANT_DETECTION_TOLERANCE", "1e-6")
+)  # Tolerance for detecting symbolic constants (π, e, etc.)
+
+# Sparse regression configuration
+MAX_SUBSET_SEARCH_SIZE = int(
+    os.getenv("KALKULATOR_MAX_SUBSET_SEARCH_SIZE", "20")
+)  # Maximum size for exhaustive subset search
+LASSO_LAMBDA = float(
+    os.getenv("KALKULATOR_LASSO_LAMBDA", "0.01")
+)  # Default L1 regularization parameter
+OMP_MAX_ITERATIONS = int(
+    os.getenv("KALKULATOR_OMP_MAX_ITERATIONS", "50")
+)  # Maximum iterations for OMP
+
+# Model selection configuration
+USE_AIC_BIC = os.getenv("KALKULATOR_USE_AIC_BIC", "true").lower() == "true"
+PREFER_SIMPLER_MODELS = os.getenv(
+    "KALKULATOR_PREFER_SIMPLER_MODELS", "true"
+).lower() == "true"
+
 ALLOWED_SYMPY_NAMES = {
     "pi": sp.pi,
     "E": sp.E,
@@ -105,6 +136,9 @@ ALLOWED_SYMPY_NAMES = {
     "exp": sp.exp,
     "Abs": sp.Abs,
     "abs": sp.Abs,  # lowercase alias for convenience
+    # Modulo
+    "Mod": sp.Mod,
+    "mod": sp.Mod,  # lowercase alias for convenience
     # Calculus & algebra
     "diff": sp.diff,
     "integrate": sp.integrate,

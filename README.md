@@ -5,9 +5,13 @@ A modular, secure algebraic calculator with support for equations, inequalities,
 ## Features
 
 - **Equation Solving**: Single equations, systems, Pell equations
+- **Modulo Operations**: Modulo equations and systems of congruences (Chinese Remainder Theorem)
 - **Inequality Solving**: Chained inequalities and constraints
 - **Calculus**: Differentiation, integration, factoring, expansion
 - **Matrix Operations**: Matrix creation and determinant calculation
+- **Function Finding**: Advanced polynomial and rational function discovery from data points
+- **Number Formats**: Automatic hexadecimal number detection and conversion
+- **User-Friendly Errors**: Clear error messages with helpful hints and suggestions
 - **Secure Sandboxing**: Worker processes with resource limits
 - **High Performance**: Persistent worker pool with caching
 
@@ -17,20 +21,28 @@ The codebase is organized into modular components:
 
 ```
 kalkulator_pkg/
-├── config.py      # Configuration constants and whitelists
-├── parser.py      # Input preprocessing and expression parsing
-├── worker.py      # Sandboxed evaluation worker pool
-├── solver.py      # Equation and inequality solving logic
-├── cli.py         # Command-line interface and REPL
-└── types.py       # Type definitions and result dataclasses
+├── config.py                  # Configuration constants and whitelists
+├── parser.py                  # Input preprocessing and expression parsing
+├── worker.py                  # Sandboxed evaluation worker pool
+├── solver.py                  # Equation and inequality solving logic
+├── cli.py                     # Command-line interface and REPL
+├── function_manager.py        # Function definition and finding algorithms
+├── function_finder_advanced.py # Advanced function finding capabilities
+├── cache_manager.py           # Cache persistence and management
+├── types.py                   # Type definitions and result dataclasses
+└── api.py                     # Public Python API
 ```
 
 ### Module Responsibilities
 
-- **parser**: Input sanitization, preprocessing, expression tree validation
+- **parser**: Input sanitization, preprocessing, expression tree validation, hex number detection
 - **worker**: Sandboxed evaluation via persistent worker pool with resource limits
-- **solver**: SymPy-based solving algorithms for equations/inequalities
-- **cli**: User interface, argument parsing, output formatting
+- **solver**: SymPy-based solving algorithms for equations/inequalities, modulo operations, CRT
+- **cli**: User interface, argument parsing, output formatting, REPL loop
+- **function_manager**: Function definition, evaluation, and advanced function finding from data
+- **function_finder_advanced**: Constant detection, high-precision parsing, sparse regression
+- **cache_manager**: Persistent cache storage and retrieval
+- **api**: Public Python API with typed returns
 
 ## Security
 
@@ -120,6 +132,14 @@ print(result.solutions)  # {"x": "x > 0"}
 # Solve systems
 result = solve_system("x+y=3, x-y=1")
 print(result.system_solutions)  # [{"x": "2", "y": "1"}]
+
+# Solve modulo equations
+result = solve_equation("x % 2 = 0")
+print(result.exact)  # Parametric solution
+
+# Solve system of congruences (Chinese Remainder Theorem)
+result = solve_system("x = 1 % 2, x = 3 % 6, x = 3 % 7")
+print(result.system_solutions)  # System of congruences solution
 ```
 
 **Error Handling:**
@@ -145,10 +165,30 @@ For complete API documentation with examples, see `kalkulator_pkg/api.py` docstr
 python kalkulator.py
 ```
 
-Commands:
-- `help` - Show help text
-- `clearcache` - Clear expression caches
-- `quit` / `exit` - Exit REPL
+**REPL Commands:**
+- `help` - Show comprehensive help text
+- `quit`, `exit` - Exit the calculator
+- `clearcache` - Clear all cached expressions
+- `showcache [all]` - Show cached expressions (add 'all' for complete list)
+- `savecache [file]` - Save cache to file (default: cache_backup.json)
+- `loadcache [replace] [file]` - Load cache from file
+- `timing [on|off]` - Enable/disable calculation time display
+- `cachehits [on|off]` - Enable/disable cache hit tracking
+- `showcachehits` - Show which expressions used cache
+- `health` - Run health check to verify dependencies
+- `plot <expr> [options]` - Plot functions (requires matplotlib)
+  - Options: `variable=x`, `x_min=-10`, `x_max=10`, `points=100`, `--save filename`
+  - Example: `plot sin(x), x_min=-pi, x_max=pi`
+
+**Function Features:**
+- Define: `f(x)=2*x`, `g(x,y)=x+y`
+- Evaluate: `f(2)`, `g(1,2)`, `g(f(5))` (nested calls)
+- Find from data: `f(1)=1, f(2)=2, find f(x)` (polynomial interpolation)
+- Advanced function finding:
+  - Discovers rational functions (e.g., `x*y/z^2` for Newton's gravitational law)
+  - Extended basis with inverse terms (`1/z`, `1/z^2`, `x*y/z^2`, etc.)
+  - Uses exact rational arithmetic for precise coefficients
+  - Constant detection (π, e, sqrt(2), etc.) in coefficients
 
 ### Examples
 
@@ -160,6 +200,19 @@ Commands:
 # Variables
 >>> x + 1 = 0
 x = -1
+
+# Modulo operations
+>>> x % 2 = 0
+x = 2*t (for integer t)
+Examples: x = 0, 2, 4, 6, ...
+
+# System of congruences (Chinese Remainder Theorem)
+>>> x = 1 % 2, x = 3 % 6, x = 3 % 7
+Solution: x == 3 (mod 42)
+
+# Hexadecimal numbers
+>>> 0x123abc
+1194684
 
 # Calculus
 >>> diff(x^3, x)
@@ -179,6 +232,14 @@ Matrix([[1, 2], [3, 4]])
 # Systems
 >>> x+y=3, x-y=1
 {x: 2, y: 1}
+
+# Function finding (rational functions)
+>>> f(15, 299792458)=1348132768105226460, find f(x,y)
+f(x, y) = x*y/y^2  # Discovers rational relationships
+
+# Side effects
+>>> print("Hello world")
+Hello world
 ```
 
 ## Configuration
@@ -204,6 +265,13 @@ The calculator returns structured error responses with codes:
 - `CANCELLED`: Request was cancelled
 - `TOO_COMPLEX`: Expression exceeds complexity limits
 - `FORBIDDEN_FUNCTION`: Unallowed function used
+- `INCOMPLETE_EXPRESSION`: Expression ends with operator or backslash
+- `SYNTAX_ERROR`: Invalid syntax with helpful hints
+
+**User-Friendly Error Messages:**
+- Clear, actionable error messages with suggestions
+- Automatic detection of common mistakes (incomplete expressions, typos, etc.)
+- Helpful hints for syntax errors and invalid input
 
 ## Public API
 
